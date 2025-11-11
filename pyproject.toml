@@ -1,0 +1,18 @@
+[project]
+name = "slack-decision-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.17.1",
+    "fastapi>=0.121.1",
+    "httpx>=0.28.1",
+    "psycopg2-binary>=2.9.11",
+    "pydantic>=2.12.4",
+    "redis>=7.0.1",
+    "slack-bolt>=1.26.0",
+    "slack-sdk>=3.37.0",
+    "sqlalchemy>=2.0.44",
+    "uvicorn>=0.38.0",
+]
