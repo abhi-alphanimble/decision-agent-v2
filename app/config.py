@@ -13,9 +13,9 @@ class Config:
     DB_NAME = os.getenv('DB_NAME', 'decision_agent')
     
     # Slack
-    SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN', 'xoxb-9887480697958-9887637005766-M2vIinOJPOZEPE8WoahrYnSI')
-    SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET', 'a342f7f89f58291a6445976266db1cdd')
-    SLACK_APP_ID = os.getenv('SLACK_APP_ID', 'A09SJDG61DX')
+    SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN', '')
+    SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET', '')
+    SLACK_APP_ID = os.getenv('SLACK_APP_ID', '')
     
     # Server
     SERVER_HOST = os.getenv('SERVER_HOST', '0.0.0.0')
