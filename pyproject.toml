@@ -18,3 +18,8 @@ dependencies = [
     "uvicorn>=0.38.0",
     "requests>=2.32.0",
 ]
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
+]

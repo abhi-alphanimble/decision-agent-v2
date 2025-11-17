@@ -3,9 +3,15 @@
 Test script for FastAPI endpoints
 Run with: python test_api.py
 """
-# import requests
+# This script is intended for manual smoke testing against a running server.
+# When collected by pytest it does not have real fixtures, so we skip it.
+import pytest
 import time
 from datetime import datetime
+
+pytest.skip("Manual API smoke test; skipped during automated pytest runs.", allow_module_level=True)
+
+import requests  # noqa: E402 (import after skip guard)
 
 BASE_URL = "http://localhost:8000"
 

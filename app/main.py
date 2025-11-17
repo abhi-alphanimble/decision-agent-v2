@@ -1,5 +1,17 @@
-
+from app.dependencies import get_db
+from app.handlers.decision_handlers import (
+    handle_propose_command,
+    handle_approve_command,
+    handle_reject_command,
+    handle_show_command,
+    handle_myvote_command,
+    handle_list_command, # ADDED: Import the new handler
+        
+)
+import app.crud as crud  # ADD THIS LINE
+import requests
 from fastapi import FastAPI, Request, status, Depends, HTTPException, BackgroundTasks
+from app.command_parser import parse_message, get_help_text, CommandType, DecisionAction
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -136,15 +148,138 @@ async def system_status(db: Session = Depends(get_db)):
         "total_votes": total_votes
     }
 
-# Background task for processing Slack events
+
 async def process_slack_event(event_data: dict):
     """Process Slack event in background"""
     try:
-        logger.info(f"Processing Slack event: {event_data.get('type')}")
-        # Add your event processing logic here
-        # This runs after returning 200 OK to Slack
+        logger.info(f"Processing event: {event_data}")
+        
+        # Handle slash command
+        if event_data.get("command"):
+            raw_text = event_data.get("raw_text", "")
+            user_id = event_data.get("user_id", "")
+            user_name = event_data.get("user_name", "")
+            channel_id = event_data.get("channel_id", "")
+            response_url = event_data.get("response_url", "")
+            
+            # Parse command
+            parsed = parse_message(raw_text)
+            
+            logger.info(f"✅ Parsed: {parsed.model_dump()}")
+            
+            if not parsed.is_valid:
+                logger.warning(f"❌ Invalid: {parsed.error_message}")
+                if response_url:
+                    try:
+                        requests.post(response_url, json={
+                            "text": f"❌ Error: {parsed.error_message}",
+                            "response_type": "ephemeral"
+                        })
+                    except:
+                        pass
+                return
+            
+            # Handle HELP
+            if parsed.command_type == CommandType.HELP:
+                help_text = get_help_text()
+                if response_url:
+                    try:
+                        requests.post(response_url, json={
+                            "text": help_text,
+                            "response_type": "ephemeral"
+                        })
+                    except:
+                        pass
+                return
+            
+            # Handle DECISION commands
+            if parsed.command_type == CommandType.DECISION:
+                # Get database session
+                db = next(get_db())
+                
+                try:
+                    if parsed.action == DecisionAction.PROPOSE:
+                        response = handle_propose_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    elif parsed.action == DecisionAction.APPROVE:
+                        response = handle_approve_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    elif parsed.action == DecisionAction.REJECT:
+                        response = handle_reject_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    elif parsed.action == DecisionAction.SHOW:
+                        response = handle_show_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    elif parsed.action == DecisionAction.MYVOTE:
+                        response = handle_myvote_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    elif parsed.action == DecisionAction.LIST:
+                        # NEW: Call the updated handler function
+                        response = handle_list_command(
+                            parsed=parsed,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    else:
+                        # Other actions not implemented yet
+                        response = {
+                            "text": f"⏳ Command `{parsed.action}` is coming soon!",
+                            "response_type": "ephemeral"
+                        }
+                    
+                    # Send response back to Slack (if response_url exists)
+                    if response_url and response is not None:
+                        try:
+                            requests.post(response_url, json=response)
+                        except Exception as e:
+                            logger.error(f"Error sending response: {e}")
+                        
+                finally:
+                    db.close()
+            
     except Exception as e:
-        logger.error(f"Error processing Slack event: {e}")
+        logger.error(f"Error processing event: {e}", exc_info=True)
+        # Try to send error to user
+        if event_data.get("response_url"):
+            try:
+                requests.post(event_data["response_url"], json={
+                    "text": f"❌ An error occurred: {str(e)}",
+                    "response_type": "ephemeral"
+                })
+            except:
+                pass
+
 
 # Slack webhook endpoint
 @app.post("/webhook/slack")
@@ -211,7 +346,7 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
                 logger.info(f"Parsed command: {parsed_command}")
                 
                 # Quick acknowledgment response
-                response_text = f"Processing your command: `{parsed_command['subcommand']}`"
+                response_text = f"⏳ Processing your command..."
                 
                 # Add actual processing to background tasks
                 background_tasks.add_task(process_slack_event, parsed_command)
