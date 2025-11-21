@@ -5,10 +5,11 @@ from app.handlers.decision_handlers import (
     handle_reject_command,
     handle_show_command,
     handle_myvote_command,
-    handle_list_command, # ADDED: Import the new handler
-        
+    handle_list_command,
+    handle_search_command,
+    handle_help_command
 )
-import app.crud as crud  # ADD THIS LINE
+import app.crud as crud
 import requests
 from fastapi import FastAPI, Request, status, Depends, HTTPException, BackgroundTasks
 from app.command_parser import parse_message, get_help_text, CommandType, DecisionAction
@@ -244,9 +245,19 @@ async def process_slack_event(event_data: dict):
                         )
                         
                     elif parsed.action == DecisionAction.LIST:
-                        # NEW: Call the updated handler function
                         response = handle_list_command(
                             parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+                        
+                    elif parsed.action == DecisionAction.SEARCH:
+                        response = handle_search_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
                             channel_id=channel_id,
                             db=db
                         )

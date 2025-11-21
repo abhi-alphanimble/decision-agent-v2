@@ -95,3 +95,16 @@ class Vote(Base):
             f"<Vote(id={self.id}, decision_id={self.decision_id}, voter='{self.voter_name}', "
             f"vote_type='{self.vote_type}', anonymous={self.is_anonymous})>"
         )
+
+
+class SlackInstallation(Base):
+    __tablename__ = "slack_installations"
+
+    team_id = Column(String, primary_key=True, index=True)
+    team_name = Column(String, nullable=True)
+    access_token = Column(String, nullable=False)
+    bot_user_id = Column(String, nullable=False)
+    installed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<SlackInstallation(team_id={self.team_id}, team_name='{self.team_name}')>"

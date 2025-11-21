@@ -797,3 +797,188 @@ def format_user_vote_detail(vote, decision) -> str:
         message += "\n👤 Your vote is visible to other users"
     
     return message
+
+
+def handle_search_command(
+    parsed: ParsedCommand,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    db: Session
+) -> Dict[str, Any]:
+    """Handle search command - search decisions by keyword."""
+    logger.info(f"🔍 Handling SEARCH from {user_name} in {channel_id}")
+    
+    # Extract search keyword from args
+    if not parsed.args or len(parsed.args) == 0:
+        logger.warning("❌ No search keyword provided")
+        return {
+            "text": "❌ Please provide search keyword.\\n\\n*Example:* `/decision search \"postgres\"`",
+            "response_type": "ephemeral"
+        }
+    
+    keyword = parsed.args[0].strip()
+    
+    if not keyword:
+        logger.warning("❌ Empty search keyword")
+        return {
+            "text": "❌ Please provide search keyword.\\n\\n*Example:* `/decision search \"postgres\"`",
+            "response_type": "ephemeral"
+        }
+    
+    logger.info(f"🔍 SEARCH Query: keyword='{keyword}', channel={channel_id}")
+    
+    # Search decisions
+    results = crud.search_decisions(db, channel_id, keyword)
+    
+    # Limit to max 10 results
+    MAX_RESULTS = 10
+    total_found = len(results)
+    results = results[:MAX_RESULTS]
+    
+    if not results:
+        logger.info(f"🔍 No results found for '{keyword}'")
+        return {
+            "text": f"🔍 No decisions found matching '{keyword}'",
+            "response_type": "ephemeral"
+        }
+    
+    # Sort by relevance: exact match first, then by date
+    keyword_lower = keyword.lower()
+    
+    def relevance_score(decision):
+        text_lower = decision.text.lower()
+        # Exact match gets highest score
+        if keyword_lower == text_lower:
+            return 3
+        # Starts with keyword
+        elif text_lower.startswith(keyword_lower):
+            return 2
+        # Contains keyword
+        elif keyword_lower in text_lower:
+            return 1
+        else:
+            return 0
+    
+    results.sort(key=lambda d: (relevance_score(d), d.created_at), reverse=True)
+    
+    # Format results
+    message = format_search_results(results, keyword, total_found)
+    
+    return {
+        "text": message,
+        "response_type": "ephemeral"
+    }
+
+
+def format_search_results(results: List[Decision], keyword: str, total_found: int) -> str:
+    """Format search results with context snippets."""
+    MAX_SNIPPET_LENGTH = 100
+    
+    # Header with result count
+    if total_found > len(results):
+        header = f"🔍 *Found {total_found} results for '{keyword}'* (showing first {len(results)})\\n\\n"
+    else:
+        header = f"🔍 *Found {total_found} result{'s' if total_found != 1 else ''} for '{keyword}'*\\n\\n"
+    
+    # Format each result
+    result_items = []
+    for decision in results:
+        status_emoji = DECISION_STATUS_EMOJI.get(decision.status, "❓")
+        
+        # Create snippet with keyword highlighted
+        text = decision.text
+        if len(text) > MAX_SNIPPET_LENGTH:
+            # Try to center the keyword in the snippet
+            keyword_lower = keyword.lower()
+            text_lower = text.lower()
+            keyword_pos = text_lower.find(keyword_lower)
+            
+            if keyword_pos != -1:
+                # Calculate snippet start/end to center keyword
+                snippet_start = max(0, keyword_pos - (MAX_SNIPPET_LENGTH // 2))
+                snippet_end = min(len(text), snippet_start + MAX_SNIPPET_LENGTH)
+                
+                # Adjust start if we're at the end
+                if snippet_end == len(text):
+                    snippet_start = max(0, snippet_end - MAX_SNIPPET_LENGTH)
+                
+                snippet = text[snippet_start:snippet_end]
+                
+                # Add ellipsis
+                if snippet_start > 0:
+                    snippet = "..." + snippet
+                if snippet_end < len(text):
+                    snippet = snippet + "..."
+            else:
+                # Keyword not found (shouldn't happen), just truncate
+                snippet = text[:MAX_SNIPPET_LENGTH] + "..."
+        else:
+            snippet = text
+        
+        # Format date
+        date_str = decision.created_at.strftime('%Y-%m-%d')
+        
+        # Build result item
+        item = f"""*#{decision.id}* {status_emoji} {decision.status.title()}
+_{snippet}_
+👍 {decision.approval_count} | 👎 {decision.rejection_count} | 📅 {date_str}
+"""
+        result_items.append(item)
+    
+    # Join all results
+    results_text = "\\n".join(result_items)
+    
+    # Footer with usage tip
+    footer = "\\n💡 *Tip:* Use `/decision show <id>` to view full details"
+    
+    return header + results_text + footer
+
+
+def handle_help_command() -> Dict[str, Any]:
+    """Handle help command - shows all available commands."""
+    logger.info("📖 Handling HELP command")
+    
+    help_text = """📚 *Slack Decision Agent - Command Reference*
+
+*Creating Proposals:*
+`/decision propose "Your proposal text"`
+Create a new decision for the team to vote on.
+
+*Voting Commands:*
+`/decision approve <id>` - Vote to approve
+`/decision reject <id>` - Vote to reject
+
+*Anonymous Voting:*
+`/decision approve <id> --anonymous` - Vote anonymously (long form)
+`/decision approve <id> --anon` - Vote anonymously (short form)
+`/decision approve <id> -a` - Vote anonymously (shortest form)
+
+*Viewing Decisions:*
+`/decision list` - Show all pending decisions
+`/decision list pending` - Show only pending decisions
+`/decision list approved` - Show only approved decisions
+`/decision show <id>` - View decision details with votes
+`/decision myvote <id>` - Check your vote on a decision
+`/decision search "keyword"` - Search decisions by keyword
+
+*Examples:*
+• `/decision propose "Should we order pizza for lunch?"`
+• `/decision approve 42`
+• `/decision reject 42 --anonymous`
+• `/decision show 42`
+• `/decision myvote 42`
+• `/decision list`
+• `/decision search "pizza"`
+
+*Privacy Note:*
+🔒 Anonymous votes hide your identity from other users, but you can always check your own vote using `/decision myvote <id>`.
+
+*Questions?*
+Contact your workspace admin for assistance.
+"""
+    
+    return {
+        "text": help_text,
+        "response_type": "ephemeral"
+    }

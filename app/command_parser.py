@@ -295,3 +295,5 @@ def get_help_text() -> str:
 *Privacy:*
 🔒 Anonymous votes hide your identity from others, but you can always check your own vote with `myvote`.
 """
+
+parse_command = parse_message

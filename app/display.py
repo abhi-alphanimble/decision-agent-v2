@@ -10,7 +10,7 @@ def display_vote_list(votes: list):
         if vote.is_anonymous:
             voter_display = "🔒 Anonymous"
         else:
-            voter_display = f"<@{vote.user_id}>"
+            voter_display = f"<@{vote.voter_phone}>"
         
         if vote.vote_type == 'approve':
             approvals.append(f"👍 {voter_display}")
