@@ -212,22 +212,19 @@ def parse_message(text: str) -> ParsedCommand:
                 is_valid=False,
                 error_message='Search requires a keyword. Example: search "pizza"'
             )
-    
+
     elif action == DecisionAction.LIST:
         if remaining_text:
-            status = remaining_text.strip().lower()
-            if status in ["pending", "approved", "rejected", "expired"]:
-                args = [status]
-            else:
-                return ParsedCommand(
-                    command_type=CommandType.DECISION,
-                    action=action,
-                    raw_text=raw_text,
-                    is_valid=False,
-                    error_message=f'Invalid status: "{status}". Valid: pending, approved, rejected, expired'
-                )
+            # Allow handler to validate arguments (supports status, page number, etc.)
+            args = remaining_text.strip().split()
+
+    elif action == DecisionAction.SUMMARIZE:
+        decision_id = extract_id_from_command(remaining_text)
+        if decision_id is not None:
+            args = [decision_id]
+        # If no ID, args remains empty (implies summarize all/dashboard)
     
-    elif action in [DecisionAction.SUMMARIZE, DecisionAction.SUGGEST]:
+    elif action == DecisionAction.SUGGEST:
         pass
     
     elif action == DecisionAction.ADD:
@@ -278,7 +275,7 @@ def get_help_text() -> str:
 - `search "keyword"` - Search decisions
 
 📊 *Analysis:*
-- `summarize` - Get summary of all decisions
+- `summarize <id>` - Get AI summary of a decision
 - `suggest` - Get AI suggestions
 
 ❓ *Help:*

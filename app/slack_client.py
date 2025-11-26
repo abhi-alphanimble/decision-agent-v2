@@ -168,6 +168,34 @@ class SlackClient:
             logger.error(f"Error getting user info: {e.response['error']}")
             raise
     
+    def get_channel_members_count(self, channel_id: str) -> int:
+        """
+        Get the number of members in a channel.
+        
+        Args:
+            channel_id: Slack channel ID
+            
+        Returns:
+            Number of members in the channel
+        """
+        try:
+            # Get channel info which includes member count
+            response = self.client.conversations_info(channel=channel_id)
+            channel = response['channel']
+            
+            # For public/private channels, get the actual member count
+            if 'num_members' in channel:
+                return channel['num_members']
+            
+            # Fallback: get members list and count
+            members_response = self.client.conversations_members(channel=channel_id)
+            return len(members_response['members'])
+            
+        except SlackApiError as e:
+            logger.error(f"Error getting channel members count: {e.response['error']}")
+            # Return default value on error
+            return 5  # Default fallback
+    
     def get_channel_info(self, channel_id: str) -> dict:
         """
         Get information about a channel.

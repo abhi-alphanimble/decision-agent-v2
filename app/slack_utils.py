@@ -84,6 +84,34 @@ def parse_event_message(event: Dict) -> Optional[Dict]:
         'bot_mentioned': bot_mentioned
     }
 
+def parse_member_event(event: Dict) -> Optional[Dict]:
+    """
+    Parse Slack member event (member_joined_channel, member_left_channel).
+    
+    Args:
+        event: Event data from Slack
+        
+    Returns:
+        Parsed member event data or None if not a valid member event
+    """
+    event_type = event.get('type', '')
+    
+    if event_type not in ['member_joined_channel', 'member_left_channel']:
+        return None
+    
+    user_id = event.get('user', '')
+    channel_id = event.get('channel', '')
+    team_id = event.get('team', '')
+    event_ts = event.get('event_ts', '')
+    
+    return {
+        'type': event_type,
+        'user_id': user_id,
+        'channel_id': channel_id,
+        'team_id': team_id,
+        'event_ts': event_ts
+    }
+
 def extract_command_from_mention(text: str, bot_user_id: str) -> Optional[str]:
     """
     Extract command from a message that mentions the bot.

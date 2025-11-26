@@ -1,0 +1,32 @@
+
+        # Handle member events (member_joined_channel, member_left_channel)
+        elif event_data.get("type") in ["member_joined_channel", "member_left_channel"]:
+            event_type = event_data.get("type")
+            user_id = event_data.get("user_id", "")
+            channel_id = event_data.get("channel_id", "")
+            
+            logger.info(f"📥 Received {event_type} event for user {user_id} in channel {channel_id}")
+            
+            if event_type == "member_joined_channel":
+                # Get database session
+                db = next(get_db())
+                
+                try:
+                    # Get user info from Slack
+                    try:
+                        user_info = slack_client.get_user_info(user_id)
+                        user_name = user_info.get('real_name', user_info.get('name', 'Unknown'))
+                    except Exception as e:
+                        logger.warning(f"Could not get user info for {user_id}: {e}")
+                        user_name = "New Member"
+                    
+                    # Handle member joined
+                    handle_member_joined_channel(
+                        user_id=user_id,
+                        user_name=user_name,
+                        channel_id=channel_id,
+                        db=db
+                    )
+                finally:
+                    db.close()
+            

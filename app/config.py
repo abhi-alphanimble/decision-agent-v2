@@ -17,7 +17,18 @@ class Config:
     SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET', '')
     SLACK_APP_ID = os.getenv('SLACK_APP_ID', '')
     SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID', '')
+    SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID', '')
+    SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID', '')
     SLACK_CLIENT_SECRET = os.getenv('SLACK_CLIENT_SECRET', '')
+    
+    # AI
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+    
+    # AI
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+    
+    # Auto-close settings
+    DECISION_TIMEOUT_HOURS = int(os.getenv('DECISION_TIMEOUT_HOURS', '48'))
     
     # Server
     SERVER_HOST = os.getenv('SERVER_HOST', '0.0.0.0')
