@@ -4,8 +4,15 @@ import io
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
-# Fix encoding for Windows
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+# Fix encoding for Windows when running standalone. Avoid replacing
+# sys.stdout during pytest runs as it interferes with pytest capture.
+if not (os.getenv('PYTEST_CURRENT_TEST') or os.getenv('TESTING')):
+    try:
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    except Exception:
+        # Best-effort; continue without replacing stdout
+        pass
 
 # Add project root to path
 sys.path.append(os.getcwd())

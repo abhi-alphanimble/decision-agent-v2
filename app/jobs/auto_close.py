@@ -5,13 +5,14 @@ This module handles automatically closing pending decisions that have exceeded
 the timeout period (default 48 hours) based on their vote counts.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, UTC, timedelta
 from typing import List
 from sqlalchemy.orm import Session
 
 from app.config import config
-from app.models import Decision
+from app.models import Decision, ChannelConfig
 from app.slack_client import slack_client
+from app.utils import get_utc_now
 from database.base import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -35,11 +36,31 @@ def check_stale_decisions():
     try:
         logger.info("🔍 Starting auto-close job for stale decisions...")
         
-        # Calculate cutoff time
-        cutoff_time = datetime.utcnow() - timedelta(hours=config.DECISION_TIMEOUT_HOURS)
+        # Get all pending decisions
+        all_pending = db.query(Decision).filter(Decision.status == "pending").all()
         
-        # Query stale decisions
-        stale_decisions = get_stale_decisions(db, cutoff_time)
+        if not all_pending:
+            logger.info("✅ No pending decisions found")
+            return
+        
+        # Build dict of channel_id -> auto_close_hours
+        channel_configs = {}
+        for decision in all_pending:
+            if decision.channel_id not in channel_configs:
+                config_obj = db.query(ChannelConfig).filter(
+                    ChannelConfig.channel_id == decision.channel_id
+                ).first()
+                # Use channel config or global default
+                timeout = config_obj.auto_close_hours if config_obj else config.DECISION_TIMEOUT_HOURS
+                channel_configs[decision.channel_id] = timeout
+        
+        # Filter to only stale decisions (using per-channel timeout)
+        stale_decisions = []
+        for decision in all_pending:
+            timeout_hours = channel_configs.get(decision.channel_id, config.DECISION_TIMEOUT_HOURS)
+            cutoff_time = get_utc_now() - timedelta(hours=timeout_hours)
+            if decision.created_at < cutoff_time:
+                stale_decisions.append(decision)
         
         if not stale_decisions:
             logger.info("✅ No stale decisions found")
@@ -56,7 +77,7 @@ def check_stale_decisions():
                 
                 # Update decision
                 decision.status = final_status
-                decision.closed_at = datetime.utcnow()
+                decision.closed_at = get_utc_now()
                 db.commit()
                 
                 logger.info(
@@ -84,23 +105,6 @@ def check_stale_decisions():
         db.close()
 
 
-def get_stale_decisions(db: Session, cutoff_time: datetime) -> List[Decision]:
-    """
-    Query pending decisions older than the cutoff time.
-    
-    Args:
-        db: Database session
-        cutoff_time: Decisions created before this time are considered stale
-        
-    Returns:
-        List of stale Decision objects
-    """
-    return db.query(Decision).filter(
-        Decision.status == "pending",
-        Decision.created_at < cutoff_time
-    ).all()
-
-
 def determine_final_status(decision: Decision) -> str:
     """
     Determine the final status of a decision based on vote counts.
@@ -108,7 +112,7 @@ def determine_final_status(decision: Decision) -> str:
     Logic:
     - If approvals > rejections → "approved"
     - If rejections > approvals → "rejected"
-    - If tied → "expired_no_consensus"
+    - If tied → "rejected" (conservative: treat tie as rejection)
     
     Args:
         decision: Decision object
@@ -118,10 +122,9 @@ def determine_final_status(decision: Decision) -> str:
     """
     if decision.approval_count > decision.rejection_count:
         return "approved"
-    elif decision.rejection_count > decision.approval_count:
-        return "rejected"
     else:
-        return "expired_no_consensus"
+        # Tied or more rejections → rejected (conservative default)
+        return "rejected"
 
 
 def send_auto_close_notification(decision: Decision):
@@ -140,11 +143,7 @@ def send_auto_close_notification(decision: Decision):
         elif decision.status == "rejected":
             emoji = "❌"
             result = "REJECTED"
-            reason = "received more rejections than approvals"
-        else:  # expired_no_consensus
-            emoji = "⏰"
-            result = "EXPIRED (No Consensus)"
-            reason = "had tied votes"
+            reason = "did not receive enough approvals (tied or more rejections)"
         
         # Format notification message
         message = (
@@ -154,6 +153,28 @@ def send_auto_close_notification(decision: Decision):
             f"👍 Approvals: {decision.approval_count}\n"
             f"👎 Rejections: {decision.rejection_count}\n\n"
             f"*Reason:* This decision {reason} after {config.DECISION_TIMEOUT_HOURS} hours.\n"
+            f"*Proposed by:* {decision.proposer_name}\n"
+            f"*Closed at:* {decision.closed_at.strftime('%Y-%m-%d %H:%M UTC')}"
+        )
+        
+        # Get channel-specific timeout for accurate message
+        db = SessionLocal()
+        try:
+            config_obj = db.query(ChannelConfig).filter(
+                ChannelConfig.channel_id == decision.channel_id
+            ).first()
+            timeout_hours = config_obj.auto_close_hours if config_obj else config.DECISION_TIMEOUT_HOURS
+        finally:
+            db.close()
+        
+        # Format notification message with channel-specific timeout
+        message = (
+            f"{emoji} *Decision #{decision.id} Auto-Closed: {result}*\n\n"
+            f"*Proposal:* {decision.text}\n\n"
+            f"*Final Vote Count:*\n"
+            f"👍 Approvals: {decision.approval_count}\n"
+            f"👎 Rejections: {decision.rejection_count}\n\n"
+            f"*Reason:* This decision {reason} after {timeout_hours} hours of pending.\n"
             f"*Proposed by:* {decision.proposer_name}\n"
             f"*Closed at:* {decision.closed_at.strftime('%Y-%m-%d %H:%M UTC')}"
         )

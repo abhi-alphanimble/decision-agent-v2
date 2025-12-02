@@ -4,12 +4,13 @@ Slack OAuth endpoints for app installation
 from fastapi import Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, UTC
 import logging
 
 from app.config import config
 from app.dependencies import get_db
 from app.models import SlackInstallation
+from app.utils import get_utc_now
 from slack_sdk.web import WebClient
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ async def slack_callback(request: Request, code: str = None, db: Session = Depen
             installation.access_token = bot_token
             installation.bot_user_id = bot_user_id
             installation.team_name = team_name
-            installation.installed_at = datetime.utcnow()
+            installation.installed_at = get_utc_now()
             logger.info(f"🔄 Updated existing installation for {team_name}")
         else:
             # Create new installation

@@ -17,12 +17,7 @@ class Config:
     SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET', '')
     SLACK_APP_ID = os.getenv('SLACK_APP_ID', '')
     SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID', '')
-    SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID', '')
-    SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID', '')
     SLACK_CLIENT_SECRET = os.getenv('SLACK_CLIENT_SECRET', '')
-    
-    # AI
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
     
     # AI
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')

@@ -1,3 +1,32 @@
+import pytest
+
+from app import crud
+from app import models
+
+
+def test_create_and_get_channel_config(db_session):
+    # Create a channel config via ORM directly
+    cfg = models.ChannelConfig(channel_id='C123', approval_percentage=60, auto_close_hours=24, group_size=5)
+    db_session.add(cfg)
+    db_session.commit()
+
+    fetched = crud.get_channel_config(db_session, 'C123')
+    assert fetched is not None
+    assert fetched.channel_id == 'C123'
+    assert fetched.approval_percentage == 60
+
+
+def test_create_decision_and_vote(db_session):
+    # Ensure create_decision and create_vote basic flows work
+    decision = crud.create_decision(db_session, channel_id='C1', user_id='U1', text='Test decision')
+    assert decision.id is not None
+
+    vote = crud.create_vote(db_session, decision_id=decision.id, user_id='U2', vote_value='approve')
+    assert vote.id is not None
+
+    votes = crud.get_votes_by_decision(db_session, decision.id)
+    assert len(votes) == 1
+    assert votes[0].vote == 'approve'
 """
 Unit tests for CRUD operations
 Tests all database operations with >85% coverage

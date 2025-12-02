@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from typing import Optional, Literal
 
@@ -46,8 +46,7 @@ class DecisionResponse(DecisionBase):
     created_at: datetime
     closed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Vote schemas
 class VoteBase(BaseModel):
@@ -64,7 +63,6 @@ class VoteResponse(VoteBase):
     decision_id: int
     voted_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 

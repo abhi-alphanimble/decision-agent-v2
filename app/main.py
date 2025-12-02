@@ -5,10 +5,13 @@ from app.handlers.decision_handlers import (
     handle_reject_command,
     handle_show_command,
     handle_myvote_command,
+    handle_add_command,
     handle_list_command,
     handle_search_command,
     handle_help_command,
-    handle_summarize_command
+    handle_summarize_command,
+    handle_suggest_command,
+    handle_config_command
 )
 import app.crud as crud
 import requests
@@ -17,26 +20,35 @@ from app.command_parser import parse_message, get_help_text, CommandType, Decisi
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, UTC
 import time
 import logging
 import json
+import os
 
 from app.schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
+from app.ai.ai_client import ai_client
 from app.dependencies import get_db, verify_database_connection
 from app.models import Decision, Vote
+from app.utils import get_utc_now
 from app.slack_client import slack_client
 from app.slack_utils import parse_slash_command, parse_event_message, parse_member_event
 from app.handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
-from database.base import test_connection, engine
+from database.base import test_connection, engine, Base
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
+from app.logging_config import configure_logging, get_context_logger
+
+# Initialize structured logging unless we're running tests (pytest sets
+# `PYTEST_CURRENT_TEST`). Avoid configuring global handlers during test
+# collection to prevent interference with pytest capture.
+if not (os.getenv('PYTEST_CURRENT_TEST') or os.getenv('TESTING')):
+    configure_logging(env=os.getenv('ENV', 'development'))
+
+# Use get_context_logger regardless; configure_logging populates the
+# implementation in the module. In test mode this will use the default
+# lightweight adapter defined in `logging_config.py`.
+logger = get_context_logger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
@@ -59,11 +71,54 @@ app.add_middleware(
 # Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all incoming requests"""
+    """Log all incoming requests and attach context where possible."""
     start_time = time.time()
-    response = await call_next(request)
+
+    # Try to read body safely for logging (do not consume stream for later handlers)
+    try:
+        body_bytes = await request.body()
+        body_text = body_bytes.decode('utf-8', errors='replace')
+    except Exception:
+        body_text = ''
+
+    # Redact obvious sensitive values
+    redacted = body_text
+    for secret_key in ['token', 'secret', 'password', 'access_token']:
+        redacted = redacted.replace(secret_key, '[REDACTED]')
+
+    # Extract user/channel if present in form-encoded or json payload
+    user_id = None
+    channel_id = None
+    try:
+        content_type = request.headers.get('content-type', '')
+        if 'application/x-www-form-urlencoded' in content_type and redacted:
+            from urllib.parse import parse_qs
+            parsed = parse_qs(redacted)
+            user_id = parsed.get('user_id', [None])[0]
+            channel_id = parsed.get('channel_id', [None])[0]
+        elif 'application/json' in content_type and redacted:
+            try:
+                parsed = json.loads(redacted)
+                # Slack events wrap user in different places
+                user_id = parsed.get('user_id') or parsed.get('event', {}).get('user')
+                channel_id = parsed.get('channel_id') or parsed.get('event', {}).get('channel')
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Bind context to logger for this request
+    request_logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
+    request_logger.info("Incoming request", extra={"method": request.method, "path": str(request.url.path), "body_preview": redacted[:100]})
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        request_logger.exception("Error while handling request")
+        raise
+
     duration_ms = round((time.time() - start_time) * 1000, 2)
-    logger.info(f"{request.method} {request.url.path} - {response.status_code} - {duration_ms}ms")
+    request_logger.info("Request completed", extra={"status_code": response.status_code, "duration_ms": duration_ms})
     return response
 
 # Global exception handler
@@ -76,7 +131,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={
             "error": "Internal server error",
             "detail": str(exc),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_utc_now().isoformat()
         }
     )
 
@@ -85,6 +140,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def startup_event():
     """Initialize on startup"""
     logger.info("Starting up Slack Decision Agent API...")
+    
+    # Ensure database tables exist before handling requests
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables are up to date")
+    except Exception as e:
+        logger.error(f"❌ Failed to ensure database tables exist: {e}", exc_info=True)
+        raise
+    
     if test_connection():
         logger.info("✅ Database connection successful")
     else:
@@ -151,10 +215,12 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     db_connected = test_connection()
+    ai_status = "ready" if getattr(ai_client, 'initialized', False) and getattr(ai_client, 'model', None) else "not_configured"
     response = {
         "status": "healthy" if db_connected else "unhealthy",
-        "timestamp": datetime.utcnow(),
-        "database": "connected" if db_connected else "disconnected"
+        "timestamp": get_utc_now(),
+        "database": "connected" if db_connected else "disconnected",
+        "ai": ai_status
     }
     status_code = status.HTTP_200_OK if db_connected else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse(
@@ -162,7 +228,8 @@ async def health_check():
         content={
             "status": response["status"],
             "timestamp": response["timestamp"].isoformat(),
-            "database": response["database"]
+            "database": response["database"],
+            "ai": response["ai"]
         }
     )
 
@@ -182,7 +249,7 @@ async def system_status(db: Session = Depends(get_db)):
     
     return {
         "api_version": "1.0.0",
-        "server_time": datetime.utcnow(),
+        "server_time": get_utc_now(),
         "database_status": db_status,
         "total_decisions": total_decisions,
         "total_votes": total_votes
@@ -194,6 +261,31 @@ async def process_slack_event(event_data: dict):
     try:
         logger.info(f"Processing event: {event_data}")
         
+        # Handle member events (member_joined_channel, member_left_channel)
+        if event_data.get("type") in ["member_joined_channel", "member_left_channel"]:
+            # Slack may use 'user'/'channel' or 'user_id'/'channel_id' depending on source
+            user_id = event_data.get("user") or event_data.get("user_id", "")
+            channel_id = event_data.get("channel") or event_data.get("channel_id", "")
+            event_type = event_data.get("type")
+
+            try:
+                user_info = slack_client.get_user_info(user_id)
+                user_name = user_info.get("real_name", user_info.get("name", "Unknown"))
+            except Exception:
+                user_name = "Unknown"
+
+            db = next(get_db())
+            try:
+                if event_type == "member_joined_channel":
+                    handle_member_joined_channel(user_id, user_name, channel_id, db)
+                elif event_type == "member_left_channel":
+                    handle_member_left_channel(user_id, user_name, channel_id, db)
+            finally:
+                db.close()
+
+            # Member event handled — stop further processing
+            return
+
         # Handle slash command
         if event_data.get("command"):
             raw_text = event_data.get("raw_text", "")
@@ -204,7 +296,15 @@ async def process_slack_event(event_data: dict):
             
             # Parse command
             parsed = parse_message(raw_text)
-            
+
+            # Normalize action to DecisionAction enum in case Pydantic stored enum as value/string
+            try:
+                if parsed.action and isinstance(parsed.action, str):
+                    parsed.action = DecisionAction(parsed.action)
+            except Exception:
+                # Leave as-is; parse_message will mark invalid actions elsewhere
+                pass
+
             logger.info(f"✅ Parsed: {parsed.model_dump()}")
             
             if not parsed.is_valid:
@@ -289,6 +389,15 @@ async def process_slack_event(event_data: dict):
                             channel_id=channel_id,
                             db=db
                         )
+
+                    elif parsed.action == DecisionAction.ADD:
+                        response = handle_add_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
                         
                     elif parsed.action == DecisionAction.SEARCH:
                         response = handle_search_command(
@@ -299,8 +408,27 @@ async def process_slack_event(event_data: dict):
                             db=db
                         )
                         
+
+                    elif parsed.action == DecisionAction.CONFIG:
+                        response = handle_config_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+
                     elif parsed.action == DecisionAction.SUMMARIZE:
                         response = handle_summarize_command(
+                            parsed=parsed,
+                            user_id=user_id,
+                            user_name=user_name,
+                            channel_id=channel_id,
+                            db=db
+                        )
+
+                    elif parsed.action == DecisionAction.SUGGEST:
+                        response = handle_suggest_command(
                             parsed=parsed,
                             user_id=user_id,
                             user_name=user_name,
@@ -376,12 +504,22 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
                 event = payload.get('event', {})
                 logger.info(f"Received event: {event.get('type')}")
                 
-                # Parse event
-                parsed_event = parse_event_message(event)
-                if parsed_event:
-                    logger.info(f"Parsed event: {parsed_event}")
-                    # Add to background tasks for processing
-                    background_tasks.add_task(process_slack_event, parsed_event)
+                event = payload.get('event', {})
+                event_type = event.get('type')
+                logger.info(f"Received event: {event_type}")
+
+                # Member events (join/leave) -> use dedicated parser
+                if event_type in ['member_joined_channel', 'member_left_channel']:
+                    parsed_event = parse_member_event(event)
+                    if parsed_event:
+                        logger.info(f"Parsed member event: {parsed_event}")
+                        background_tasks.add_task(process_slack_event, parsed_event)
+                else:
+                    # Fallback to standard message/event parser
+                    parsed_event = parse_event_message(event)
+                    if parsed_event:
+                        logger.info(f"Parsed event: {parsed_event}")
+                        background_tasks.add_task(process_slack_event, parsed_event)
                 
                 # Return 200 OK immediately
                 return {"ok": True}
@@ -513,7 +651,7 @@ async def slack_callback(request: Request, code: str = None, db: Session = Depen
             installation.access_token = bot_token
             installation.bot_user_id = bot_user_id
             installation.team_name = team_name
-            installation.installed_at = datetime.utcnow()
+            installation.installed_at = get_utc_now()
             logger.info(f"🔄 Updated existing installation for {team_name}")
         else:
             # Create new installation

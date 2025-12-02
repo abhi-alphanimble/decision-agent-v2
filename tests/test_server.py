@@ -1,22 +1,22 @@
 import requests
-import sys
 
-def test_endpoint(url):
-    print(f"Testing {url}...")
+
+def test_endpoint_root_and_health():
+    """Simple endpoint checks for local server.
+    These are integration-style checks that expect a local server to be running on port 8000.
+    """
+    root_url = "http://localhost:8000/"
+    health_url = "http://localhost:8000/health"
+
     try:
-        response = requests.get(url, timeout=5)
-        print(f"Status: {response.status_code}")
-        print(f"Response: {response.text[:100]}")
-        return True
-    except Exception as e:
-        print(f"Failed: {e}")
-        return False
+        r1 = requests.get(root_url, timeout=5)
+        assert r1.status_code == 200
+    except Exception:
+        # If server not running, fail the test clearly
+        assert False, f"Failed to reach {root_url}"
 
-print("--- Starting Local Server Test ---")
-success_root = test_endpoint("http://localhost:8000/")
-success_health = test_endpoint("http://localhost:8000/health")
-
-if success_root and success_health:
-    print("✅ Local server is responsive.")
-else:
-    print("❌ Local server is NOT responsive.")
+    try:
+        r2 = requests.get(health_url, timeout=5)
+        assert r2.status_code == 200
+    except Exception:
+        assert False, f"Failed to reach {health_url}"

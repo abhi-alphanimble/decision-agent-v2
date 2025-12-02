@@ -3,8 +3,8 @@ Command Parser for Slack Decision Agent
 Parses incoming Slack commands into structured data
 """
 from enum import Enum
-from typing import Optional, Dict, List, Any
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, List, Any, Tuple
+from pydantic import BaseModel, Field, ConfigDict
 import re
 import logging
 
@@ -30,6 +30,34 @@ class DecisionAction(str, Enum):
     MYVOTE = "myvote"
     SUMMARIZE = "summarize"
     SUGGEST = "suggest"
+    CONFIG = "config"
+
+
+VALID_CONFIG_SETTINGS = {"approval_percentage", "auto_close_hours", "group_size"}
+
+
+ACTION_ALIASES: Dict[str, DecisionAction] = {
+    # Approve variations
+    "approved": DecisionAction.APPROVE,
+    "approves": DecisionAction.APPROVE,
+    "approving": DecisionAction.APPROVE,
+    # Reject variations
+    "rejected": DecisionAction.REJECT,
+    "rejects": DecisionAction.REJECT,
+    "rejecting": DecisionAction.REJECT,
+    # List variations
+    "listed": DecisionAction.LIST,
+    "listing": DecisionAction.LIST,
+    # Show variations
+    "showed": DecisionAction.SHOW,
+    "showing": DecisionAction.SHOW,
+    # Myvote variations
+    "myvotes": DecisionAction.MYVOTE,
+    "myvoted": DecisionAction.MYVOTE,
+    # Config variations
+    "settings": DecisionAction.CONFIG,
+    "configure": DecisionAction.CONFIG,
+}
 
 
 class ParsedCommand(BaseModel):
@@ -42,8 +70,7 @@ class ParsedCommand(BaseModel):
     is_valid: bool = True
     error_message: Optional[str] = None
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 def extract_quoted_text(text: str) -> Optional[str]:
@@ -159,9 +186,8 @@ def parse_message(text: str) -> ParsedCommand:
         )
     
     # Try to match decision action
-    try:
-        action = DecisionAction(action_str)
-    except ValueError:
+    action = resolve_action(action_str)
+    if not action:
         return ParsedCommand(
             command_type=CommandType.UNKNOWN,
             raw_text=raw_text,
@@ -225,7 +251,11 @@ def parse_message(text: str) -> ParsedCommand:
         # If no ID, args remains empty (implies summarize all/dashboard)
     
     elif action == DecisionAction.SUGGEST:
-        pass
+        # Suggest can operate on a specific decision (by ID) or broadly.
+        decision_id = extract_id_from_command(remaining_text)
+        if decision_id is not None:
+            args = [decision_id]
+        # If no ID provided, treat as request for suggestions (empty args)
     
     elif action == DecisionAction.ADD:
         quoted_text = extract_quoted_text(remaining_text)
@@ -240,6 +270,82 @@ def parse_message(text: str) -> ParsedCommand:
                 error_message='Add requires quoted text. Example: add "Should we have a meeting?"'
             )
     
+    elif action == DecisionAction.CONFIG:
+        # Parse config subcommand: "show" or "set <key> <value>"
+        if not remaining_text:
+            return ParsedCommand(
+                command_type=CommandType.DECISION,
+                action=action,
+                raw_text=raw_text,
+                is_valid=False,
+                error_message='Config requires a subcommand. Example: config show OR config set approval_percentage 70'
+            )
+        
+        config_parts = remaining_text.strip().split()
+        if not config_parts:
+            return ParsedCommand(
+                command_type=CommandType.DECISION,
+                action=action,
+                raw_text=raw_text,
+                is_valid=False,
+                error_message='Config requires a subcommand. Example: config show OR config set approval_percentage 70'
+            )
+        
+        subcommand = config_parts[0].lower()
+        
+        if subcommand == "show":
+            args = ["show"]
+        elif subcommand == "set":
+            result = parse_config_set_arguments(config_parts[1:])
+            if not result:
+                return ParsedCommand(
+                    command_type=CommandType.DECISION,
+                    action=action,
+                    raw_text=raw_text,
+                    is_valid=False,
+                    error_message='Config set requires <setting> <value>. Example: config set approval_percentage 70'
+                )
+            setting_name, value = result
+            if setting_name not in VALID_CONFIG_SETTINGS:
+                return ParsedCommand(
+                    command_type=CommandType.DECISION,
+                    action=action,
+                    raw_text=raw_text,
+                    is_valid=False,
+                    error_message=f"Unknown setting: {setting_name}. Valid: {', '.join(sorted(VALID_CONFIG_SETTINGS))}"
+                )
+            args = [setting_name, normalize_config_value(setting_name, value)]
+        elif subcommand in VALID_CONFIG_SETTINGS:
+            if len(config_parts) < 2:
+                return ParsedCommand(
+                    command_type=CommandType.DECISION,
+                    action=action,
+                    raw_text=raw_text,
+                    is_valid=False,
+                    error_message=f'Config setting `{subcommand}` requires a value. Example: config {subcommand} 70'
+                )
+            args = [subcommand, normalize_config_value(subcommand, config_parts[1])]
+        elif "=" in subcommand:
+            setting_name, value = subcommand.split("=", 1)
+            setting_name = setting_name.strip().lower()
+            if setting_name not in VALID_CONFIG_SETTINGS or not value.strip():
+                return ParsedCommand(
+                    command_type=CommandType.DECISION,
+                    action=action,
+                    raw_text=raw_text,
+                    is_valid=False,
+                    error_message='Unknown config subcommand. Use: config show OR config set <setting> <value>'
+                )
+            args = [setting_name, normalize_config_value(setting_name, value)]
+        else:
+            return ParsedCommand(
+                command_type=CommandType.DECISION,
+                action=action,
+                raw_text=raw_text,
+                is_valid=False,
+                error_message='Unknown config subcommand. Use: config show OR config set <setting> <value>'
+            )
+    
     return ParsedCommand(
         command_type=CommandType.DECISION,
         action=action,
@@ -252,45 +358,95 @@ def parse_message(text: str) -> ParsedCommand:
 
 def get_help_text() -> str:
     """Get help text for available commands"""
-    return """*Decision Agent Commands:*
+    return """*🤖 Decision Agent Help Guide*
 
-📝 *Creating Decisions:*
-- `propose "decision text"` - Create a new decision
-- `add "decision text"` - Same as propose
+Welcome! I help teams make decisions faster and more democratically.
 
-🗳️ *Voting:*
-- `approve <id>` - Vote to approve a decision
-- `reject <id>` - Vote to reject a decision
-- `approve <id> --anonymous` - Vote anonymously (long form)
-- `approve <id> --anon` - Vote anonymously (short form)
-- `approve <id> -a` - Vote anonymously (shortest form)
-- `myvote <id>` - Check your vote on a decision
+*📝 Propose & Create*
+• `/decision propose "text"` - Create a new decision
+  _Example: `/decision propose "Should we switch to Python 3.11?"`_
+• `/decision add "text"` - Alias for propose
 
-📋 *Viewing Decisions:*
-- `list` - List all pending decisions
-- `list pending` - List pending decisions
-- `list approved` - List approved decisions
-- `list rejected` - List rejected decisions
-- `show <id>` - Show details of a specific decision
-- `search "keyword"` - Search decisions
+*🗳️ Vote & Participate*
+• `/decision approve <id>` - Vote YES
+• `/decision reject <id>` - Vote NO
+• `/decision approve <id> --anonymous` - Vote anonymously (hidden from others)
+• `/decision myvote <id>` - Check how you voted
 
-📊 *Analysis:*
-- `summarize <id>` - Get AI summary of a decision
-- `suggest` - Get AI suggestions
+*📋 View & Track*
+• `/decision list` - Show all active decisions
+• `/decision list pending` - Show only pending items
+• `/decision list approved` - Show approved history
+• `/decision show <id>` - See full details and who voted
+• `/decision search "keyword"` - Find past decisions
 
-❓ *Help:*
-- `help` - Show this help message
+*🧠 AI Insights*
+• `/decision summarize <id>` - Get an AI summary of the decision
+• `/decision suggest <id>` - Get AI advice on next steps
 
-*Examples:*
-- `/decision propose "Should we order lunch?"`
-- `/decision approve 42`
-- `/decision reject 42 --anonymous`
-- `/decision approve 42 -a`
-- `/decision list pending`
-- `/decision myvote 42`
+*⚙️ Configuration (Admin Only)*
+• `/decision config show` - View current channel settings
+• `/decision config set <setting> <value>` - Update channel settings
+  - Available settings: `approval_percentage`, `auto_close_hours`, `group_size`
+  - Example: `/decision config set auto_close_hours 72`
 
-*Privacy:*
-🔒 Anonymous votes hide your identity from others, but you can always check your own vote with `myvote`.
+*💡 Pro Tips*
+• Use `--anonymous` (or `-a`) for sensitive topics.
+• You can change your vote anytime while the decision is pending.
+• Use `list` to find the ID of a decision.
+
 """
 
 parse_command = parse_message
+
+
+def resolve_action(action_str: str) -> Optional[DecisionAction]:
+    """
+    Resolve an action string (including aliases) to a DecisionAction.
+    """
+    normalized = action_str.lower()
+    if normalized in DecisionAction._value2member_map_:
+        return DecisionAction(normalized)
+    return ACTION_ALIASES.get(normalized)
+
+
+def parse_config_set_arguments(parts: List[str]) -> Optional[Tuple[str, str]]:
+    """
+    Parse the arguments that follow `config set`.
+    Supports both `config set key value` and `config set key=value`.
+    """
+    if not parts:
+        return None
+    
+    first = parts[0]
+    # Handle "key=value" as a single token
+    if "=" in first:
+        key, value = first.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key and value:
+            return key, value
+        # Allow "config set key= 70"
+        if key and len(parts) > 1 and not value:
+            return key, parts[1].strip()
+        return None
+    
+    if len(parts) < 2:
+        return None
+    
+    key = first.strip().lower()
+    value = parts[1].strip()
+    if not key or not value:
+        return None
+    return key, value
+
+
+def normalize_config_value(setting_name: str, raw_value: str) -> str:
+    """
+    Normalize config values before passing them downstream.
+    Example: strip '%' for approval percentages.
+    """
+    value = (raw_value or "").strip()
+    if setting_name == "approval_percentage" and value.endswith("%"):
+        value = value[:-1].strip()
+    return value

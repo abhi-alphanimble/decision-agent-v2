@@ -1,3 +1,47 @@
+import pytest
+
+from app import command_parser
+
+
+def test_parse_propose_simple():
+    text = 'propose "Do we adopt policy X?"'
+    parsed = command_parser.parse_message(text)
+    assert parsed.action == command_parser.DecisionAction.PROPOSE
+    assert parsed.args[0] == "Do we adopt policy X?"
+
+
+def test_parse_config_set_with_percent():
+    text = "config set approval_percentage 70%"
+    parsed = command_parser.parse_message(text)
+    assert parsed.action == command_parser.DecisionAction.CONFIG
+    assert parsed.args == ["approval_percentage", "70"]
+
+
+def test_parse_config_set_with_equals():
+    text = "config set approval_percentage=80%"
+    parsed = command_parser.parse_message(text)
+    assert parsed.action == command_parser.DecisionAction.CONFIG
+    assert parsed.args == ["approval_percentage", "80"]
+
+
+def test_parse_config_without_set_keyword():
+    text = "config approval_percentage 65"
+    parsed = command_parser.parse_message(text)
+    assert parsed.action == command_parser.DecisionAction.CONFIG
+    assert parsed.args == ["approval_percentage", "65"]
+
+
+def test_parse_config_inline_equals():
+    text = "config group_size=25"
+    parsed = command_parser.parse_message(text)
+    assert parsed.action == command_parser.DecisionAction.CONFIG
+    assert parsed.args == ["group_size", "25"]
+
+
+def test_parse_invalid_command():
+    parsed = command_parser.parse_message("")
+    assert parsed.is_valid is False
+    assert parsed.error_message is not None
 """
 Unit tests for command parser
 Run with: pytest tests/test_command_parser.py -v
@@ -40,6 +84,13 @@ def test_approve_with_id():
     assert result.args == [42]
 
 
+def test_approved_alias():
+    result = parse_message("approved 42")
+    assert result.is_valid is True
+    assert result.action == DecisionAction.APPROVE
+    assert result.args == [42]
+
+
 def test_approve_anonymous():
     result = parse_message("approve 42 --anonymous")
     assert result.is_valid is True
@@ -50,6 +101,13 @@ def test_approve_anonymous():
 
 def test_reject_with_id():
     result = parse_message("reject 42")
+    assert result.is_valid is True
+    assert result.action == DecisionAction.REJECT
+    assert result.args == [42]
+
+
+def test_rejected_alias():
+    result = parse_message("rejected 42")
     assert result.is_valid is True
     assert result.action == DecisionAction.REJECT
     assert result.args == [42]

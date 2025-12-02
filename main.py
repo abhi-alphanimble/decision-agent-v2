@@ -11,18 +11,12 @@ import asyncio
 import httpx # Required for async http requests in process_command_async
 import json
 from datetime import datetime
+from datetime import datetime
 
-# --- IMPORTS FOR SLACK CLIENT AND CONFIG ---
-# Assuming these are available in your project structure
-from app.slack_client import slack_client 
-# from app.config import config # Assuming config is used by slack_client
-# ------------------------------------------
+# Database session and models
+from database.base import SessionLocal, engine, Base
 
-# Assuming these are your database imports
-from database.base import SessionLocal, engine, Base 
-
-# Assuming these are your command-related imports
-from app.command_parser import parse_message as parse_command
+# Import handler functions used by the command router
 from app.handlers.decision_handlers import (
     handle_propose_command,
     handle_approve_command,
@@ -30,15 +24,20 @@ from app.handlers.decision_handlers import (
     handle_show_command,
     handle_myvote_command,
     handle_list_command,
-    handle_help_command
+    handle_help_command,
 )
+from app.command_parser import parse_message
+from app.slack_client import slack_client
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from app.logging_config import configure_logging, get_context_logger
+
+# Avoid configuring global logging during pytest/test runs to prevent
+# interfering with pytest's capture mechanism. Pytest sets `PYTEST_CURRENT_TEST`.
+if not (os.getenv('PYTEST_CURRENT_TEST') or os.getenv('TESTING')):
+    configure_logging(env=os.getenv('ENV', 'development'))
+
+logger = get_context_logger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -62,27 +61,33 @@ async def root():
 
 
 @app.post("/webhook/slack")
-async def handle_slack_command(
-    request: Request, # Added Request to access headers (though not strictly needed for commands)
-    command: str = Form(...),
-    text: str = Form(...),
-    user_id: str = Form(...),
-    user_name: str = Form(...),
-    channel_id: str = Form(...),
-    response_url: Optional[str] = Form(None),
-    trigger_id: Optional[str] = Form(None)
-):
+async def handle_slack_command(request: Request):
     """
     Main endpoint for handling Slack slash commands.
+    Reads form-encoded payload from the request body so we avoid the
+    `python-multipart` requirement during test collection.
     """
+    # Parse form data safely (no Form() dependency at module import time)
+    try:
+        form = await request.form()
+        command = form.get('command')
+        text = form.get('text')
+        user_id = form.get('user_id')
+        user_name = form.get('user_name')
+        channel_id = form.get('channel_id')
+        response_url = form.get('response_url')
+    except Exception:
+        # Fallback: treat unknown body as empty
+        command = None
+        text = None
+        user_id = None
+        user_name = None
+        channel_id = None
+        response_url = None
+
     logger.info(f"📨 Received command from {user_name} (ID: {user_id})")
-    
-    # ⚠️ NOTE: Slash commands don't *always* require signature verification 
-    # if you use an immediate, ephemeral response, but it's good practice 
-    # to perform it here if necessary for security.
-    
-    # Return immediate acknowledgment to Slack (prevent timeout)
-    # Process command in background
+
+    # Process command in background to keep Slack responsive
     asyncio.create_task(
         process_command_async(
             text=text,
@@ -92,8 +97,7 @@ async def handle_slack_command(
             response_url=response_url
         )
     )
-    
-    # Return immediate response
+
     return JSONResponse(content={
         "text": "⏳ Processing your command...",
         "response_type": "ephemeral"
@@ -107,7 +111,7 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
     
     try:
         # Parse the command
-        parsed = parse_command(text)
+        parsed = parse_message(text)
         logger.info(f"📋 Parsed command: {parsed.command}")
         
         # Route to appropriate handler
@@ -164,6 +168,16 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 channel_id=channel_id,
                 db=db
             )
+        
+        elif parsed.command == "config":
+            from app.handlers.decision_handlers import handle_config_command
+            response = handle_config_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )    
         
         elif parsed.command == "help" or parsed.command == "":
             response = handle_help_command()
@@ -515,17 +529,12 @@ def main():
     """
     import uvicorn
     
-    print("🚀 Starting Slack Decision Agent...")
-    print("📊 Features enabled:")
-    print("   ✅ Decision proposals")
-    print("   ✅ Anonymous voting (--anonymous, --anon, -a)")
-    print("   ✅ Vote tracking")
-    print("   ✅ Decision management")
-    print("\n🌐 Server will start on http://0.0.0.0:8000")
-    print("📡 Slack commands endpoint: http://0.0.0.0:8000/webhook/slack")
-    print("📡 Slack events endpoint: http://0.0.0.0:8000/slack/events")
-    print("📡 Slack install endpoint: http://0.0.0.0:8000/slack/install")
-    print("\n💡 Use Ctrl+C to stop the server\n")
+    logger.info("🚀 Starting Slack Decision Agent...")
+    logger.info("📊 Features enabled: Decision proposals, Anonymous voting, Vote tracking, Decision management")
+    logger.info("🌐 Server will start on http://0.0.0.0:8000")
+    logger.info("📡 Slack commands endpoint: http://0.0.0.0:8000/webhook/slack")
+    logger.info("📡 Slack events endpoint: http://0.0.0.0:8000/slack/events")
+    logger.info("📡 Slack install endpoint: http://0.0.0.0:8000/slack/install")
     
     uvicorn.run(
         "main:app",
