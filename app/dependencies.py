@@ -1,6 +1,6 @@
 
 from sqlalchemy.orm import Session
-from database.base import SessionLocal, test_connection
+from database.base import SessionLocal, check_db_connection
 from fastapi import Depends, HTTPException, status
 from typing import Generator
 
@@ -20,7 +20,7 @@ def verify_database_connection():
     Verify database is accessible.
     Raises HTTPException if database is down.
     """
-    if not test_connection():
+    if not check_db_connection():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database connection failed"

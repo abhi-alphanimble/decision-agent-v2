@@ -9,10 +9,11 @@ from datetime import datetime, UTC, timedelta
 from typing import List
 from sqlalchemy.orm import Session
 
-from app.config import config
-from app.models import Decision, ChannelConfig
-from app.slack_client import slack_client
-from app.utils import get_utc_now
+from ..config import config
+from ..models import Decision, ChannelConfig
+from ..slack import slack_client
+from ..utils import get_utc_now
+from ..database.crud import update_decision_status, close_decision_as_unreachable, get_channel_config
 from database.base import SessionLocal
 
 logger = logging.getLogger(__name__)

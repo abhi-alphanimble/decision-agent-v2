@@ -7,15 +7,15 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from app import crud
-from app.command_parser import ParsedCommand
-from app.slack_client import slack_client
-from app.display import format_vote_summary, display_vote_list
-from app.models import Decision # Import Decision model for type hinting
-from app.utils import truncate_text # NEW: Import the utility function
-from app.ai.ai_client import ai_client # Import AI client
+from ..database import crud
+from ..command_parser import ParsedCommand
+from ..slack import slack_client
+from ..utils.display import format_vote_summary, display_vote_list
+from ..models import Decision # Import Decision model for type hinting
+from ..utils import truncate_text # NEW: Import the utility function
+from ..ai.ai_client import ai_client # Import AI client
 
-from app.logging_config import get_context_logger
+from ..config import get_context_logger
 logger = get_context_logger(__name__)
 
 # MVP Hardcoded values
@@ -1092,7 +1092,7 @@ def format_decision_approved_message(decision, db: Session) -> str:
     """Format message when decision is approved."""
     # Get votes to show who voted (respecting anonymity)
     votes = crud.get_votes_by_decision(db, decision.id)
-    vote_summary = format_vote_summary(votes)
+    vote_summary = display_vote_list(votes)
     
     return f"""🎉 *DECISION APPROVED!*
 
@@ -1115,7 +1115,7 @@ def format_decision_rejected_message(decision, db: Session) -> str:
     """Format message when decision is rejected."""
     # Get votes to show who voted (respecting anonymity)
     votes = crud.get_votes_by_decision(db, decision.id)
-    vote_summary = format_vote_summary(votes)
+    vote_summary = display_vote_list(votes)
     
     return f"""❌ *DECISION REJECTED*
 
@@ -1147,7 +1147,7 @@ def format_decision_detail(decision, votes: list) -> str:
     }.get(decision.status, "❓")
     
     # Format vote summary
-    vote_summary = format_vote_summary(votes)
+    vote_summary = display_vote_list(votes)
     
     message = f"""📋 *Decision #{decision.id}*
 

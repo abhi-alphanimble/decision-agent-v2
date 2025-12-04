@@ -10,7 +10,7 @@ except Exception:
     genai = None
 from app.config import config
 from app.models import Decision, Vote
-from app.logging_config import get_context_logger
+from app.config import get_context_logger
 
 logger = get_context_logger(__name__)
 
@@ -31,11 +31,19 @@ class AIClient:
 
         if self.api_key:
             try:
-                genai.configure(api_key=self.api_key)
-                try:
-                    self.model = genai.GenerativeModel('gemini-2.5-flash')
-                except Exception:
-                    self.model = getattr(genai, 'GenerativeModel', None)
+                configure_func = getattr(genai, 'configure', None)
+                if configure_func:
+                    configure_func(api_key=self.api_key)
+                else:
+                    logger.warning("⚠️ configure function not available in google.generativeai")
+                    return
+                
+                GenerativeModel = getattr(genai, 'GenerativeModel', None)
+                if GenerativeModel:
+                    self.model = GenerativeModel('gemini-2.5-flash')
+                else:
+                    logger.warning("⚠️ GenerativeModel not available in google.generativeai")
+                    return
 
                 if self.model:
                     logger.info("✅ AI Client initialized with Gemini 2.5 Flash")
@@ -52,12 +60,33 @@ class AIClient:
         if not self.model:
             logger.error("❌ AI model not initialized")
             return None
-        # Implementation omitted for brevity; real logic unchanged in production
         try:
-            # Very small safe placeholder when model exists but generation fails
-            return "AI-generated summary"
-        except Exception:
-            logger.exception("Error during AI summarization")
+            # Build context from decision and votes
+            votes_summary = "\n".join([
+                f"- {v.voter_name}: {v.vote_type.upper()} {('(anonymous)' if v.is_anonymous else '')}"
+                for v in votes
+            ]) if votes else "No votes yet"
+            
+            prompt = f"""Provide a brief AI summary of this decision:
+
+Decision: {decision.text}
+
+Status: {decision.status}
+Approvals: {decision.approval_count}/{decision.group_size_at_creation}
+Rejections: {decision.rejection_count}
+Threshold: {decision.approval_threshold}
+
+Votes:
+{votes_summary}
+
+Provide a 2-3 sentence summary of the decision and voting status."""
+            
+            response = self.model.generate_content(prompt)
+            if response and response.text:
+                return response.text
+            return "Unable to generate summary"
+        except Exception as e:
+            logger.error(f"Error during AI summarization: {e}", exc_info=True)
             return None
 
     def suggest_next_steps(self, decision: Decision, votes: list[Vote]) -> Optional[str]:
@@ -65,9 +94,32 @@ class AIClient:
             logger.error("❌ AI model not initialized")
             return None
         try:
-            return "AI-generated suggestions"
-        except Exception:
-            logger.exception("Error during AI suggestions")
+            # Build context from decision and votes
+            votes_summary = "\n".join([
+                f"- {v.voter_name}: {v.vote_type.upper()} {('(anonymous)' if v.is_anonymous else '')}"
+                for v in votes
+            ]) if votes else "No votes yet"
+            
+            prompt = f"""Suggest next steps for this decision:
+
+Decision: {decision.text}
+
+Status: {decision.status}
+Approvals: {decision.approval_count}/{decision.group_size_at_creation}
+Rejections: {decision.rejection_count}
+Threshold needed: {decision.approval_threshold}
+
+Votes:
+{votes_summary}
+
+Based on the current voting status, provide 2-3 actionable suggestions for next steps."""
+            
+            response = self.model.generate_content(prompt)
+            if response and response.text:
+                return response.text
+            return "Unable to generate suggestions"
+        except Exception as e:
+            logger.error(f"Error during AI suggestions: {e}", exc_info=True)
             return None
 
 

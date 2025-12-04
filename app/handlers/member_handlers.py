@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 import logging
 from typing import Dict, Any
 
-from app import crud
-from app.slack_client import slack_client
+from ..database import crud
+from ..slack import slack_client
 
 logger = logging.getLogger(__name__)
 

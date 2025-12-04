@@ -61,7 +61,8 @@ def disable_external_apis(monkeypatch):
             return {"ok": True}
 
         def get_channel_members_count(self, channel_id):
-            # Align with handler MVP default used by tests
+            # Return a default group size used by handlers during tests.
+            # This avoids network calls and keeps tests deterministic.
             return 10
 
         def get_user_info(self, user_id):
@@ -76,8 +77,8 @@ def disable_external_apis(monkeypatch):
             return "Suggestions"
 
     # Apply monkeypatches
-    monkeypatch.setattr('app.slack_client.slack_client', DummySlack(), raising=False)
+    monkeypatch.setattr('app.slack.client.slack_client', DummySlack(), raising=False)
     # Also patch any modules that imported the client at import-time
-    monkeypatch.setattr('app.handlers.decision_handlers.slack_client', DummySlack(), raising=False)
+    monkeypatch.setattr('app.slack.slack_client', DummySlack(), raising=False)
     # app.ai may not expose ai_client at package attribute level; allow setattr without raising
-    monkeypatch.setattr('app.ai.ai_client', DummyAI(), raising=False)
+    monkeypatch.setattr('app.ai.ai_client.ai_client', DummyAI(), raising=False)

@@ -1,5 +1,5 @@
-from app.dependencies import get_db
-from app.handlers.decision_handlers import (
+from .dependencies import get_db
+from .handlers.decision_handlers import (
     handle_propose_command,
     handle_approve_command,
     handle_reject_command,
@@ -13,10 +13,10 @@ from app.handlers.decision_handlers import (
     handle_suggest_command,
     handle_config_command
 )
-import app.crud as crud
+from .database import crud
 import requests
 from fastapi import FastAPI, Request, status, Depends, HTTPException, BackgroundTasks
-from app.command_parser import parse_message, get_help_text, CommandType, DecisionAction
+from .command_parser import parse_message, get_help_text, CommandType, DecisionAction
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -26,18 +26,18 @@ import logging
 import json
 import os
 
-from app.schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
-from app.ai.ai_client import ai_client
-from app.dependencies import get_db, verify_database_connection
-from app.models import Decision, Vote
-from app.utils import get_utc_now
-from app.slack_client import slack_client
-from app.slack_utils import parse_slash_command, parse_event_message, parse_member_event
-from app.handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
-from database.base import test_connection, engine, Base
+from .schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
+from .ai.ai_client import ai_client
+from .dependencies import get_db, verify_database_connection
+from .models import Decision, Vote
+from .utils import get_utc_now
+from .slack import slack_client
+from .utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event
+from .handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
+from database.base import check_db_connection, engine, Base
 
 # Configure logging
-from app.logging_config import configure_logging, get_context_logger
+from .config import configure_logging, get_context_logger
 
 # Initialize structured logging unless we're running tests (pytest sets
 # `PYTEST_CURRENT_TEST`). Avoid configuring global handlers during test
@@ -148,8 +148,9 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ Failed to ensure database tables exist: {e}", exc_info=True)
         raise
-    
-    if test_connection():
+
+    # Quick connectivity check
+    if check_db_connection():
         logger.info("✅ Database connection successful")
     else:
         logger.error("❌ Database connection failed!")
@@ -157,7 +158,7 @@ async def startup_event():
     # Initialize and start background job scheduler
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
-        from app.jobs.auto_close import check_stale_decisions
+        from .jobs.auto_close import check_stale_decisions
         
         scheduler = BackgroundScheduler()
         
@@ -214,7 +215,7 @@ async def root():
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
-    db_connected = test_connection()
+    db_connected = check_db_connection()
     ai_status = "ready" if getattr(ai_client, 'initialized', False) and getattr(ai_client, 'model', None) else "not_configured"
     response = {
         "status": "healthy" if db_connected else "unhealthy",
@@ -609,9 +610,9 @@ async def slack_callback(request: Request, code: str = None, db: Session = Depen
     Handles the Slack OAuth 2.0 redirect after a user approves the app installation.
     This is the Redirect URL.
     """
-    from app.config import config
+    from .config import config
     from slack_sdk.web import WebClient
-    from app.models import SlackInstallation
+    from .models import SlackInstallation
     from fastapi.responses import RedirectResponse
     
     if not code:

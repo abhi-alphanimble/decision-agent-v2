@@ -1,5 +1,5 @@
 
-from database.base import SessionLocal, test_connection
+from database.base import SessionLocal, check_db_connection
 from app.models import Decision, Vote
 from datetime import datetime
 
@@ -12,7 +12,7 @@ def test_database():
     
     # Test connection
     print("\n1. Testing database connection...")
-    if test_connection():
+    if check_db_connection():
         print("✅ Database connection successful!")
     else:
         print("❌ Database connection failed!")

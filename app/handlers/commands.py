@@ -7,8 +7,8 @@ from typing import Dict, Any
 
 from sqlalchemy.orm import Session
 # Assuming these exist in your project structure
-from app import crud 
-from app.command_parser import ParsedCommand 
+from ..database import crud 
+from ..command_parser import ParsedCommand 
 # Assuming you have imports for other handlers (propose, approve, etc.) here
 
 logger = logging.getLogger(__name__)

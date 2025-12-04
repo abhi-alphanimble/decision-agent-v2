@@ -38,8 +38,13 @@ def init_db():
     """Initialize database - create all tables"""
     Base.metadata.create_all(bind=engine)
 
-def test_connection():
-    """Test database connection"""
+def check_db_connection():
+    """Check database connection.
+
+    Renamed from `test_connection` to avoid accidental pytest collection
+    (functions starting with `test_` are treated as test cases). Returns
+    True on success, False on failure.
+    """
     try:
         db = SessionLocal()
         db.execute(text("SELECT 1"))

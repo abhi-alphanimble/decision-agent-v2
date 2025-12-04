@@ -1,7 +1,7 @@
 import pytest
 from app.handlers import decision_handlers as handlers
 from app.command_parser import ParsedCommand
-from app import crud
+import app.database.crud as crud
 
 
 def make_parsed(action_text):
@@ -52,11 +52,10 @@ def test_ai_summarize_and_suggest(db_session):
     resp2 = handlers.handle_suggest_command(parsed_sug, user_id="Uai", user_name="AI", channel_id="Cai", db=db_session)
     assert "AI Suggestions" in resp2["text"] or "Unable to generate suggestions" not in resp2["text"]
 
-
 def test_add_preapproved_decision(db_session):
     """Verify `/decision add` creates an approved decision in the DB."""
     from app.handlers import decision_handlers
-    from app import crud
+    import app.database.crud as crud
 
     channel = "C_TEST_ADD"
     user_id = "U_TEST_ADD"
