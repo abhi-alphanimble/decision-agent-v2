@@ -13,15 +13,16 @@ CHANNEL_ID = "C09TLG56DU6"  # main channel
 
 print(f"Listing members for channel: {CHANNEL_ID}\n")
 
+client = slack_client._get_client()
 try:
-    members_response = slack_client.client.conversations_members(channel=CHANNEL_ID)
+    members_response = client.conversations_members(channel=CHANNEL_ID)
     member_ids = members_response.get('members', [])
     print(f"Raw members count from conversations_members: {len(member_ids)}\n")
 
     human_ids = []
     for uid in member_ids:
         try:
-            user_resp = slack_client.client.users_info(user=uid)
+            user_resp = client.users_info(user=uid)
             user = user_resp.get('user', {})
         except Exception as e:
             print(f"- {uid}: ERROR fetching user info: {e}")

@@ -21,16 +21,15 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from app.slack_client import slack_client
-from app import crud
+from app.database import crud
 from app.models import ChannelConfig
-from database.base import engine
-from sqlalchemy.orm import Session
+from database.base import SessionLocal
 
 EXPLAIN = True
 
 
 def main():
-    db = Session(engine)
+    db = SessionLocal()
     configs = db.query(ChannelConfig).all()
     print(f"Found {len(configs)} channel configs to check.")
 

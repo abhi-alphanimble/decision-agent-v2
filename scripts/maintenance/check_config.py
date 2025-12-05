@@ -9,10 +9,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from app.models import ChannelConfig
-from database.base import engine
-from sqlalchemy.orm import Session
+from database.base import SessionLocal
 
-db = Session(engine)
+db = SessionLocal()
 configs = db.query(ChannelConfig).all()
 
 print(f"Total configs: {len(configs)}")

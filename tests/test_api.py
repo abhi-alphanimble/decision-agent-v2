@@ -27,11 +27,16 @@ def test_endpoint(method, endpoint, expected_status=200):
     
     try:
         start_time = time.time()
+        response = None
         
         if method == "GET":
             response = requests.get(url)
         elif method == "POST":
             response = requests.post(url)
+        
+        if response is None:
+            print(f"   ❌ ERROR: Unsupported method {method}")
+            return False
         
         duration = round((time.time() - start_time) * 1000, 2)
         

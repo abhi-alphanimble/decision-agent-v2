@@ -57,10 +57,18 @@ def check_stale_decisions():
         
         # Filter to only stale decisions (using per-channel timeout)
         stale_decisions = []
+        now = get_utc_now()
         for decision in all_pending:
             timeout_hours = channel_configs.get(decision.channel_id, config.DECISION_TIMEOUT_HOURS)
-            cutoff_time = get_utc_now() - timedelta(hours=timeout_hours)
-            if decision.created_at < cutoff_time:
+            cutoff_time = now - timedelta(hours=timeout_hours)
+            
+            # Handle timezone-naive datetimes from database
+            decision_time = decision.created_at
+            if decision_time.tzinfo is None:
+                # Make it timezone-aware (assume UTC)
+                decision_time = decision_time.replace(tzinfo=UTC)
+            
+            if decision_time < cutoff_time:
                 stale_decisions.append(decision)
         
         if not stale_decisions:
@@ -137,6 +145,10 @@ def send_auto_close_notification(decision: Decision):
     """
     try:
         # Determine emoji and message based on status
+        emoji = "⏳"
+        result = "CLOSED"
+        reason = "was auto-closed after the timeout period"
+        
         if decision.status == "approved":
             emoji = "✅"
             result = "APPROVED"

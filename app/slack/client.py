@@ -6,6 +6,7 @@ import hmac
 import hashlib
 import time
 import os
+from typing import Optional
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from ..config import config
@@ -23,6 +24,9 @@ def _is_test_mode() -> bool:
 
 
 class SlackClient:
+    client: Optional[WebClient]
+    signing_secret: str
+    
     def __init__(self):
         """Initialize Slack WebClient with bot token.
 
@@ -37,6 +41,12 @@ class SlackClient:
             self.client = WebClient(token=config.SLACK_BOT_TOKEN)
         except Exception:
             logger.exception("Failed to initialize Slack WebClient; continuing with client=None")
+
+    def _get_client(self) -> WebClient:
+        """Get the WebClient, raising if not initialized."""
+        if self.client is None:
+            raise RuntimeError("Slack WebClient not initialized")
+        return self.client
         
     def verify_slack_signature(self, body: str, timestamp: str, signature: str) -> bool:
         """
@@ -87,7 +97,7 @@ class SlackClient:
             Response from Slack API
         """
         try:
-            response = self.client.chat_postMessage(
+            response = self._get_client().chat_postMessage(
                 channel=channel,
                 text=text,
                 blocks=blocks
@@ -112,7 +122,7 @@ class SlackClient:
             Response from Slack API
         """
         try:
-            response = self.client.chat_postMessage(
+            response = self._get_client().chat_postMessage(
                 channel=channel,
                 thread_ts=thread_ts,
                 text=text,
@@ -137,7 +147,7 @@ class SlackClient:
             Response from Slack API
         """
         try:
-            response = self.client.chat_postEphemeral(
+            response = self._get_client().chat_postEphemeral(
                 channel=channel,
                 user=user,
                 text=text
@@ -162,7 +172,7 @@ class SlackClient:
             Response from Slack API
         """
         try:
-            response = self.client.chat_update(
+            response = self._get_client().chat_update(
                 channel=channel,
                 ts=ts,
                 text=text,
@@ -185,7 +195,7 @@ class SlackClient:
             User info from Slack API
         """
         try:
-            response = self.client.users_info(user=user_id)
+            response = self._get_client().users_info(user=user_id)
             logger.debug("Fetched user info", extra={"user_id": user_id})
             return response['user']
         except SlackApiError as e:
@@ -204,7 +214,7 @@ class SlackClient:
         """
         try:
             # Try conversations.info first (may include num_members)
-            response = self.client.conversations_info(channel=channel_id)
+            response = self._get_client().conversations_info(channel=channel_id)
             channel = response.get('channel', {})
 
             # If num_members is provided by Slack, use it as a starting point
@@ -212,18 +222,18 @@ class SlackClient:
                 raw_count = channel['num_members']
             else:
                 # Fallback to fetching the members list
-                members_response = self.client.conversations_members(channel=channel_id)
+                members_response = self._get_client().conversations_members(channel=channel_id)
                 raw_count = len(members_response.get('members', []))
 
             # To get an accurate visible-human count, filter out bots/deleted users and the app itself
             try:
-                auth = self.client.auth_test()
+                auth = self._get_client().auth_test()
                 bot_user_id = auth.get('user_id')
             except Exception:
                 bot_user_id = None
 
             # Fetch members list (we need member IDs to filter)
-            members_response = self.client.conversations_members(channel=channel_id)
+            members_response = self._get_client().conversations_members(channel=channel_id)
             member_ids = members_response.get('members', [])
 
             human_count = 0
@@ -233,7 +243,7 @@ class SlackClient:
                     continue
 
                 try:
-                    user_info = self.client.users_info(user=uid).get('user', {})
+                    user_info = self._get_client().users_info(user=uid).get('user', {})
                 except SlackApiError as e:
                     logger.warning(f"Could not fetch user info for {uid}: {e.response.get('error')}")
                     # In doubt, exclude from human count
@@ -269,7 +279,7 @@ class SlackClient:
             Channel info from Slack API
         """
         try:
-            response = self.client.conversations_info(channel=channel_id)
+            response = self._get_client().conversations_info(channel=channel_id)
             logger.debug("Fetched channel info", extra={"channel_id": channel_id})
             return response['channel']
         except SlackApiError as e:
@@ -321,7 +331,7 @@ else:
     slack_client = SlackClient()
 
 
-def get_client_for_team(team_id: str) -> WebClient:
+def get_client_for_team(team_id: str) -> Optional[WebClient]:
     """Get a Slack WebClient for a specific team (placeholder)."""
     # In a multi-workspace setup, this would fetch the token from DB
     # For now, return the global slack_client

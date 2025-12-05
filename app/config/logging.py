@@ -6,9 +6,11 @@ from typing import Optional, Dict
 
 # Optional dependency: python-json-logger. If not installed, fallback to plain text.
 try:
-    from pythonjsonlogger import jsonlogger
+    from pythonjsonlogger import JsonFormatter
     JSON_AVAILABLE = True
-except ImportError:
+except Exception:
+    # Keep JsonFormatter defined (possibly None) so static analysis knows the name exists
+    JsonFormatter = None
     JSON_AVAILABLE = False
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
@@ -87,9 +89,9 @@ def configure_logging(env: Optional[str] = None, level: int = logging.INFO):
     console_handler.setLevel(root_level)
 
     # Formatter
-    if JSON_AVAILABLE:
+    if JSON_AVAILABLE and JsonFormatter is not None:
         fmt_fields = ['asctime', 'levelname', 'name', 'message', 'user_id', 'channel_id', 'decision_id']
-        formatter = jsonlogger.JsonFormatter('%(asctime)s %(levelname)s %(name)s %(message)s %(user_id)s %(channel_id)s %(decision_id)s')
+        formatter = JsonFormatter('%(asctime)s %(levelname)s %(name)s %(message)s %(user_id)s %(channel_id)s %(decision_id)s')
     else:
         fmt = '[%(asctime)s] [%(levelname)s] [%(name)s] [user=%(user_id)s channel=%(channel_id)s decision=%(decision_id)s] %(message)s'
         formatter = logging.Formatter(fmt)
@@ -130,7 +132,7 @@ class LoggerAdapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
         extra = kwargs.setdefault('extra', {})
         # Attach provided context keys but do not override if already present
-        for k, v in self.extra.items():
+        for k, v in (self.extra or {}).items():
             if k not in extra:
                 extra[k] = v
         # Ensure we don't log sensitive info in message

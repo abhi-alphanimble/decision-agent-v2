@@ -24,9 +24,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from app.slack_client import slack_client
-from app import crud
-from database.base import engine
-from sqlalchemy.orm import Session
+from app.database import crud
+from database.base import SessionLocal
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,7 +58,7 @@ def main():
     channels = list_all_channels(slack_client)
     logger.info(f"Found {len(channels)} channels to examine")
 
-    db = Session(engine)
+    db = SessionLocal()
     created = 0
     updated = 0
     skipped = 0

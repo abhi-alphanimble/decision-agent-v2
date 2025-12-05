@@ -15,6 +15,7 @@ from .handlers.decision_handlers import (
 )
 from .database import crud
 import requests
+from typing import Optional
 from fastapi import FastAPI, Request, status, Depends, HTTPException, BackgroundTasks
 from .command_parser import parse_message, get_help_text, CommandType, DecisionAction
 from fastapi.responses import JSONResponse
@@ -29,7 +30,7 @@ import os
 from .schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
 from .ai.ai_client import ai_client
 from .dependencies import get_db, verify_database_connection
-from .models import Decision, Vote
+from .models import Decision, Vote, ChannelConfig
 from .utils import get_utc_now
 from .slack import slack_client
 from .utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event
@@ -179,6 +180,14 @@ async def startup_event():
         
         logger.info("✅ Background scheduler started - auto-close job will run every hour")
         
+        # Run auto-close immediately on startup to catch any stale decisions
+        logger.info("🔄 Running initial auto-close check on startup...")
+        try:
+            check_stale_decisions()
+            logger.info("✅ Initial auto-close check completed")
+        except Exception as e:
+            logger.error(f"❌ Error in initial auto-close check: {e}", exc_info=True)
+        
     except Exception as e:
         logger.error(f"❌ Failed to start background scheduler: {e}", exc_info=True)
     
@@ -257,6 +266,85 @@ async def system_status(db: Session = Depends(get_db)):
     }
 
 
+# Manual trigger for auto-close job
+@app.post("/api/v1/admin/auto-close")
+async def trigger_auto_close(db: Session = Depends(get_db)):
+    """Manually trigger the auto-close job for stale decisions"""
+    try:
+        from .jobs.auto_close import check_stale_decisions
+        
+        # Get count of pending decisions before
+        pending_before = db.query(Decision).filter(Decision.status == "pending").count()
+        
+        # Run auto-close
+        check_stale_decisions()
+        
+        # Get count after
+        pending_after = db.query(Decision).filter(Decision.status == "pending").count()
+        closed_count = pending_before - pending_after
+        
+        return {
+            "status": "success",
+            "message": f"Auto-close job completed. Closed {closed_count} decision(s).",
+            "pending_before": pending_before,
+            "pending_after": pending_after,
+            "closed": closed_count
+        }
+    except Exception as e:
+        logger.error(f"Error triggering auto-close: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
+# Get stale decisions info
+@app.get("/api/v1/admin/stale-decisions")
+async def get_stale_decisions(db: Session = Depends(get_db)):
+    """Get list of decisions that should be auto-closed"""
+    from datetime import timedelta
+    from .config import config
+    
+    try:
+        # Get all pending decisions
+        pending = db.query(Decision).filter(Decision.status == "pending").all()
+        
+        stale = []
+        for d in pending:
+            # Get channel config for timeout
+            channel_config = db.query(ChannelConfig).filter(
+                ChannelConfig.channel_id == d.channel_id
+            ).first()
+            timeout_hours = channel_config.auto_close_hours if channel_config else config.DECISION_TIMEOUT_HOURS
+            
+            cutoff = get_utc_now() - timedelta(hours=timeout_hours)
+            age_hours = (get_utc_now() - d.created_at).total_seconds() / 3600
+            
+            if d.created_at < cutoff:
+                stale.append({
+                    "id": d.id,
+                    "text": d.text[:50] + "..." if len(d.text) > 50 else d.text,
+                    "channel_id": d.channel_id,
+                    "created_at": d.created_at.isoformat(),
+                    "age_hours": round(age_hours, 1),
+                    "timeout_hours": timeout_hours,
+                    "approvals": d.approval_count,
+                    "rejections": d.rejection_count
+                })
+        
+        return {
+            "total_pending": len(pending),
+            "stale_count": len(stale),
+            "stale_decisions": stale
+        }
+    except Exception as e:
+        logger.error(f"Error fetching stale decisions: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
 async def process_slack_event(event_data: dict):
     """Process Slack event in background"""
     try:
@@ -323,20 +411,23 @@ async def process_slack_event(event_data: dict):
             # Handle HELP
             if parsed.command_type == CommandType.HELP:
                 help_text = get_help_text()
+                logger.info(f"📖 Help command - sending help text to {response_url[:50]}...")
                 if response_url:
                     try:
-                        requests.post(response_url, json={
+                        resp = requests.post(response_url, json={
                             "text": help_text,
                             "response_type": "ephemeral"
                         })
-                    except:
-                        pass
+                        logger.info(f"📖 Help response status: {resp.status_code}, body: {resp.text[:100]}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send help response: {e}")
                 return
             
             # Handle DECISION commands
             if parsed.command_type == CommandType.DECISION:
                 # Get database session
                 db = next(get_db())
+                response = None  # Initialize response
                 
                 try:
                     if parsed.action == DecisionAction.PROPOSE:
@@ -445,11 +536,19 @@ async def process_slack_event(event_data: dict):
                         }
                     
                     # Send response back to Slack (if response_url exists)
+                    logger.info(f"📤 Attempting to send response to Slack. response_url={bool(response_url)}, response={response is not None}")
                     if response_url and response is not None:
                         try:
-                            requests.post(response_url, json=response)
+                            response_text = response.get('text', '')
+                            logger.info(f"📤 Sending to Slack: {response_text[:100]}...")
+                            logger.info(f"📤 Full response payload: {response}")
+                            slack_response = requests.post(response_url, json=response, timeout=10)
+                            logger.info(f"📤 Slack response status: {slack_response.status_code}")
+                            logger.info(f"📤 Slack response body: {slack_response.text[:500] if slack_response.text else 'empty'}")
                         except Exception as e:
-                            logger.error(f"Error sending response: {e}")
+                            logger.error(f"Error sending response: {e}", exc_info=True)
+                    else:
+                        logger.warning(f"⚠️ Not sending response: response_url={response_url}, response={response}")
                         
                 finally:
                     db.close()
@@ -605,7 +704,7 @@ async def slack_install():
 
 
 @app.get("/slack/install/callback")
-async def slack_callback(request: Request, code: str = None, db: Session = Depends(get_db)):
+async def slack_callback(request: Request, code: Optional[str] = None, db: Session = Depends(get_db)):
     """
     Handles the Slack OAuth 2.0 redirect after a user approves the app installation.
     This is the Redirect URL.

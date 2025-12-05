@@ -112,10 +112,10 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
     try:
         # Parse the command
         parsed = parse_message(text)
-        logger.info(f"📋 Parsed command: {parsed.command}")
+        logger.info(f"📋 Parsed command: {parsed.action}")
         
         # Route to appropriate handler
-        if parsed.command == "propose":
+        if parsed.action == "propose":
             response = handle_propose_command(
                 parsed=parsed,
                 user_id=user_id,
@@ -124,7 +124,7 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 db=db
             )
         
-        elif parsed.command == "approve":
+        elif parsed.action == "approve":
             response = handle_approve_command(
                 parsed=parsed,
                 user_id=user_id,
@@ -133,7 +133,7 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 db=db
             )
         
-        elif parsed.command == "reject":
+        elif parsed.action == "reject":
             response = handle_reject_command(
                 parsed=parsed,
                 user_id=user_id,
@@ -142,7 +142,7 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 db=db
             )
         
-        elif parsed.command == "show":
+        elif parsed.action == "show":
             response = handle_show_command(
                 parsed=parsed,
                 user_id=user_id,
@@ -151,7 +151,7 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 db=db
             )
         
-        elif parsed.command == "myvote":
+        elif parsed.action == "myvote":
             response = handle_myvote_command(
                 parsed=parsed,
                 user_id=user_id,
@@ -160,16 +160,14 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 db=db
             )
         
-        elif parsed.command == "list":
+        elif parsed.action == "list":
             response = handle_list_command(
                 parsed=parsed,
-                user_id=user_id,
-                user_name=user_name,
                 channel_id=channel_id,
                 db=db
             )
         
-        elif parsed.command == "config":
+        elif parsed.action == "config":
             from app.handlers.decision_handlers import handle_config_command
             response = handle_config_command(
                 parsed=parsed,
@@ -179,12 +177,12 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                 db=db
             )    
         
-        elif parsed.command == "help" or parsed.command == "":
+        elif parsed.command_type == "help" or parsed.action is None:
             response = handle_help_command()
         
         else:
             response = {
-                "text": f"❌ Unknown command: `{parsed.command}`\n\nUse `/decision help` to see available commands.",
+                "text": f"❌ Unknown command: `{parsed.action}`\n\nUse `/decision help` to see available commands.",
                 "response_type": "ephemeral"
             }
         
@@ -207,7 +205,7 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
                     text=response.get("text", "")
                 )
         
-        logger.info(f"✅ Command processed: {parsed.command}")
+        logger.info(f"✅ Command processed: {parsed.action}")
     
     except Exception as e:
         logger.error(f"❌ Error processing command: {e}", exc_info=True)
@@ -238,12 +236,12 @@ async def process_command_async(text, user_id, user_name, channel_id, response_u
         db.close()
 
 
-def handle_list_command(parsed, user_id, user_name, channel_id, db):
+def _local_handle_list_command(parsed, user_id, user_name, channel_id, db):
     """
     Handle list command - shows all pending decisions.
     Command: /decision list
     """
-    from app import crud
+    from app.database import crud
     
     logger.info(f"📋 Handling LIST from {user_name} in {channel_id}")
     
@@ -276,7 +274,7 @@ def handle_list_command(parsed, user_id, user_name, channel_id, db):
     }
 
 
-def handle_help_command():
+def _local_handle_help_command():
     """
     Handle help command - shows all available commands.
     Command: /decision help

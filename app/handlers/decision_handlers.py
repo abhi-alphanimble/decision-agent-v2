@@ -724,6 +724,9 @@ def handle_list_command(
     logger = get_context_logger(__name__, channel_id=channel_id)
     logger.info("Handling LIST command")
     
+    # Initialize page to default
+    page = 1
+    
     # 1. Parse optional status filter (default to "all")
     status_filter_raw = (parsed.args[0] if parsed.args else "all").lower()
     
@@ -749,22 +752,17 @@ def handle_list_command(
                 "text": f"❌ Invalid status filter or page number: `{status_filter_raw}`. Use: `all`, `pending`, `approved`, `rejected`, or a page number.",
                 "response_type": "ephemeral"
             }
-        
-        # If we got here, page is already set, so skip to step 3.
-        pass
 
 
-    # 2. Parse optional page number (default to 1) if not already parsed
-    if 'page' not in locals():
-        page = 1
-        try:
-            if len(parsed.args) > page_index:
-                page = int(parsed.args[page_index])
-                
-            if page < 1:
-                page = 1
-        except (ValueError, TypeError):
-            page = 1 # Ignore invalid page argument
+    # 2. Parse optional page number (default to 1) if not already parsed from first arg
+    try:
+        if len(parsed.args) > page_index:
+            page = int(parsed.args[page_index])
+            
+        if page < 1:
+            page = 1
+    except (ValueError, TypeError):
+        page = 1 # Ignore invalid page argument
 
     logger.info(f"📋 LIST Query: channel={channel_id}, status={status_filter}, page={page}")
 
@@ -846,126 +844,6 @@ def handle_list_command(
     }
 
 
-# Final help override appended at EOF to ensure this is the active handler
-def _final_help_command(parsed: ParsedCommand = None, user_id: str = None, user_name: str = None, channel_id: str = None, db: Session = None) -> Dict[str, Any]:
-    logger.info("📖 Handling HELP command (final EOF override)")
-
-    help_text = """📚 *Decision Agent Help Guide*
-
-*Propose & Create*
-• `/decision propose "text"` - Create a new decision
-• `/decision add "text"` - Add a pre-approved decision (admin)
-
-*Vote & Participate*
-• `/decision approve <id>` - Vote YES
-• `/decision reject <id>` - Vote NO
-• `/decision approve <id> --anonymous` - Vote anonymously
-
-*View & Track*
-• `/decision list` - Show active decisions
-• `/decision list pending` - Show pending items
-• `/decision list approved` - Show approved history
-• `/decision show <id>` - See full details and votes
-• `/decision search "keyword"` - Search decisions
-
-*AI Insights*
-• `/decision summarize <id>` - AI-generated summary of the decision
-• `/decision suggest <id>` - AI suggestions for next steps
-
-*Pro Tips*
-• Use `--anonymous` for sensitive topics.
-• Check `/decision myvote <id>` to see your vote.
-
-"""
-
-    return {
-        "text": help_text,
-        "response_type": "ephemeral"
-    }
-
-
-# Override the module symbol so this final version is used regardless of previous definitions
-handle_help_command = _final_help_command
-
-
-# Override/ensure a clean help handler (placed after original to guarantee
-# the test suite sees the expected help text even if earlier edits were malformed)
-def handle_help_command(parsed: ParsedCommand = None, user_id: str = None, user_name: str = None, channel_id: str = None, db: Session = None) -> Dict[str, Any]:
-    """Consistent help command returned for tests and runtime."""
-    logger.info("📖 Handling HELP command (override)")
-
-    help_text = """📚 *Decision Agent Help Guide*
-
-*Propose & Create*
-• `/decision propose "text"` - Create a new decision
-• `/decision add "text"` - Add a pre-approved decision (admin)
-
-*Vote & Participate*
-• `/decision approve <id>` - Vote YES
-• `/decision reject <id>` - Vote NO
-• `/decision approve <id> --anonymous` - Vote anonymously
-
-*View & Track*
-• `/decision list` - Show active decisions
-• `/decision list pending` - Show pending items
-• `/decision list approved` - Show approved history
-• `/decision show <id>` - See full details and votes
-• `/decision search "keyword"` - Search decisions
-
-*AI Insights*
-• `/decision summarize <id>` - AI-generated summary of the decision
-• `/decision suggest <id>` - AI suggestions for next steps
-
-*Pro Tips*
-• Use `--anonymous` for sensitive topics.
-• Check `/decision myvote <id>` to see your vote.
-
-"""
-
-    return {
-        "text": help_text,
-        "response_type": "ephemeral"
-    }
-    
-# Final override: ensure tests and runtime get a stable help message
-def _final_help_command(parsed: ParsedCommand = None, user_id: str = None, user_name: str = None, channel_id: str = None, db: Session = None) -> Dict[str, Any]:
-    logger.info("📖 Handling HELP command (final override)")
-
-    help_text = """📚 *Decision Agent Help Guide*
-
-*Propose & Create*
-• `/decision propose "text"` - Create a new decision
-• `/decision add "text"` - Add a pre-approved decision (admin)
-
-*Vote & Participate*
-• `/decision approve <id>` - Vote YES
-• `/decision reject <id>` - Vote NO
-• `/decision approve <id> --anonymous` - Vote anonymously
-
-*View & Track*
-• `/decision list` - Show active decisions
-• `/decision list pending` - Show pending items
-• `/decision list approved` - Show approved history
-• `/decision show <id>` - See full details and votes
-• `/decision search "keyword"` - Search decisions
-
-*AI Insights*
-• `/decision summarize <id>` - AI-generated summary of the decision
-• `/decision suggest <id>` - AI suggestions for next steps
-
-*Pro Tips*
-• Use `--anonymous` for sensitive topics.
-• Check `/decision myvote <id>` to see your vote.
-
-"""
-
-    return {
-        "text": help_text,
-        "response_type": "ephemeral"
-    }
-
-# Replace any previous definition with the final override
-handle_help_command = _final_help_command
 # ============================================================================
 # FORMATTING HELPER FUNCTIONS
 # ============================================================================
@@ -1341,28 +1219,6 @@ _{snippet}_
     return header + results_text + footer
 
 
-def handle_help_command(parsed: ParsedCommand = None, user_id: str = None, user_name: str = None, channel_id: str = None, db: Session = None) -> Dict[str, Any]:
-    """Handle help command - shows all available commands.
-
-    Signature accepts the same parameters as other handlers so it can be
-    called uniformly from the dispatcher and from tests.
-    """
-    logger.info("📖 Handling HELP command")
-    
-    help_text = """📚 *Decision Agent Help Guide*\n
-
-*Creating Proposals:*
-    # Use the existing command reference below (keeps previous content but ensures
-    # the heading matches what tests expect)
-    help_text += "\n*Creating Proposals:*\n\n`/decision propose "Your proposal text"`\nCreate a new decision for the team to vote on.\n\n*Voting Commands:*\n`/decision approve <id>` - Vote to approve\n`/decision reject <id>` - Vote to reject\n\n*Anonymous Voting:*\n`/decision approve <id> --anonymous` - Vote anonymously (long form)\n`/decision approve <id> --anon` - Vote anonymously (short form)\n`/decision approve <id> -a` - Vote anonymously (shortest form)\n\n*Viewing Decisions:*\n`/decision list` - Show all active decisions\n`/decision list pending` - Show only pending items\n`/decision list approved` - Show approved history\n`/decision show <id>` - View decision details with votes\n`/decision myvote <id>` - Check your vote on a decision\n`/decision search "keyword"` - Search decisions by keyword\n\n*AI Insights:*\n`/decision summarize <id>` - Get an AI summary of the decision\n`/decision suggest <id>` - Get AI advice on next steps\n\n*Configuration (Admin Only)*\n`/decision config show` - View current channel settings\n`/decision config set <setting> <value>` - Update channel settings\n"""
-
-    return {
-        "text": help_text,
-        "response_type": "ephemeral"
-    }
-
-
-
 def handle_config_command(
     parsed: ParsedCommand,
     user_id: str,
@@ -1467,7 +1323,7 @@ def handle_config_command(
 
 
 # --- FINAL HELP OVERRIDE (appended at EOF) ---
-def _help_command_final(parsed: ParsedCommand = None, user_id: str = None, user_name: str = None, channel_id: str = None, db: Session = None) -> Dict[str, Any]:
+def _help_command_final(parsed: Optional[ParsedCommand] = None, user_id: Optional[str] = None, user_name: Optional[str] = None, channel_id: Optional[str] = None, db: Optional[Session] = None) -> Dict[str, Any]:
     logger.info("📖 Handling HELP command (EOF final override)")
     help_text = """📚 *Decision Agent Help Guide*
 

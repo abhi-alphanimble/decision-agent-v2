@@ -1,6 +1,7 @@
 """
 Slack OAuth endpoints for app installation
 """
+from typing import Optional
 from fastapi import Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -43,7 +44,7 @@ async def slack_install():
     return RedirectResponse(url=oauth_url)
 
 
-async def slack_callback(request: Request, code: str = None, db: Session = Depends(get_db)):
+async def slack_callback(request: Request, code: Optional[str] = None, db: Session = Depends(get_db)):
     """
     Handles the Slack OAuth 2.0 redirect after a user approves the app installation.
     This is the Redirect URL.
