@@ -68,8 +68,8 @@ def main():
     # Ensure member imports exist near other slack_utils imports
     if 'parse_member_event' not in content:
         content = content.replace(
-            'from app.slack_utils import parse_slash_command, parse_event_message',
-            'from app.slack_utils import parse_slash_command, parse_event_message, parse_member_event'
+            'from app.utils.slack_parsing import parse_slash_command, parse_event_message',
+            'from app.utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event'
         )
 
     if 'handle_member_joined_channel' not in content:

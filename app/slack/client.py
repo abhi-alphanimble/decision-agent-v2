@@ -206,60 +206,39 @@ class SlackClient:
         """
         Get the number of members in a channel.
         
+        Uses a simple, efficient approach: count members from conversations.members
+        and subtract 1 for the bot itself. This avoids O(n) API calls which would
+        cause rate limiting on large channels.
+        
         Args:
             channel_id: Slack channel ID
             
         Returns:
-            Number of members in the channel
+            Number of members in the channel (excluding the bot itself)
         """
         try:
-            # Try conversations.info first (may include num_members)
-            response = self._get_client().conversations_info(channel=channel_id)
+            # First, try to get num_members from conversations.info (single API call)
+            # NOTE: include_num_members=True is REQUIRED - Slack does not return num_members by default
+            response = self._get_client().conversations_info(channel=channel_id, include_num_members=True)
             channel = response.get('channel', {})
 
-            # If num_members is provided by Slack, use it as a starting point
             if 'num_members' in channel and isinstance(channel['num_members'], int):
-                raw_count = channel['num_members']
+                member_count = channel['num_members']
             else:
-                # Fallback to fetching the members list
+                # Fallback: fetch members list and count (still just one API call)
                 members_response = self._get_client().conversations_members(channel=channel_id)
-                raw_count = len(members_response.get('members', []))
+                member_count = len(members_response.get('members', []))
 
-            # To get an accurate visible-human count, filter out bots/deleted users and the app itself
-            try:
-                auth = self._get_client().auth_test()
-                bot_user_id = auth.get('user_id')
-            except Exception:
-                bot_user_id = None
-
-            # Fetch members list (we need member IDs to filter)
-            members_response = self._get_client().conversations_members(channel=channel_id)
-            member_ids = members_response.get('members', [])
-
-            human_count = 0
-            for uid in member_ids:
-                # skip the bot itself (if present)
-                if bot_user_id and uid == bot_user_id:
-                    continue
-
-                try:
-                    user_info = self._get_client().users_info(user=uid).get('user', {})
-                except SlackApiError as e:
-                    logger.warning(f"Could not fetch user info for {uid}: {e.response.get('error')}")
-                    # In doubt, exclude from human count
-                    continue
-
-                # Skip deleted users and bots
-                if user_info.get('deleted'):
-                    continue
-                if user_info.get('is_bot'):
-                    continue
-
-                # Count as human
-                human_count += 1
-
-            logger.info("Channel members counted", extra={"channel_id": channel_id, "raw_count": raw_count, "human_count": human_count})
-            return human_count
+            # Subtract 1 for the bot itself (approximate; bots are typically included)
+            # This is a reasonable approximation that avoids expensive per-user API calls
+            adjusted_count = max(1, member_count - 1)
+            
+            logger.info("Channel members counted", extra={
+                "channel_id": channel_id, 
+                "raw_count": member_count, 
+                "adjusted_count": adjusted_count
+            })
+            return adjusted_count
 
         except SlackApiError as e:
             logger.exception("Error getting channel members count for %s: %s", channel_id, e.response.get('error') if hasattr(e, 'response') else str(e))
@@ -317,7 +296,7 @@ if _is_test_mode():
 
         def get_channel_members_count(self, channel_id: str) -> int:
             logger.debug("Mock get_channel_members_count called", extra={"channel_id": channel_id})
-            # Return 10 to align with MVP_GROUP_SIZE used in tests
+            # Return 10 to align with DEFAULT_GROUP_SIZE used in tests
             return 10
 
         def get_channel_info(self, channel_id: str) -> dict:

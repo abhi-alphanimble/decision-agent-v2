@@ -8,6 +8,8 @@ class HealthResponse(BaseModel):
     status: Literal["healthy", "unhealthy"]
     timestamp: datetime
     database: Literal["connected", "disconnected"]
+    ai: Optional[Literal["ready", "not_configured"]] = None
+    slack: Optional[Literal["ready", "partial", "not_configured"]] = None
 
 class RootResponse(BaseModel):
     message: str

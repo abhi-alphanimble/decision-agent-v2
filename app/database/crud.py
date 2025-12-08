@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Decision, Vote, ChannelConfig, ConfigChangeLog
 from ..utils.common import get_utc_now
+from ..utils.db_errors import handle_db_errors, safe_commit
 from ..config.logging import get_context_logger
 
 logger = get_context_logger(__name__)
@@ -91,31 +92,25 @@ def create_decision(
         raise
 
 
+@handle_db_errors("get_decision_by_id", default_return=None)
 def get_decision_by_id(db: Session, decision_id: int) -> Optional[Decision]:
     """Get a decision by its ID."""
-    try:
-        return db.query(Decision).filter(Decision.id == decision_id).first()
-    except Exception as e:
-        logger.error(f"Database error in get_decision_by_id: {str(e)}")
-        return None
+    return db.query(Decision).filter(Decision.id == decision_id).first()
 
 
+@handle_db_errors("get_decisions_by_channel", default_return=[])
 def get_decisions_by_channel(
     db: Session, 
     channel_id: str, 
     status: Optional[str] = None
 ) -> List[Decision]:
     """Get all decisions for a channel, optionally filtered by status."""
-    try:
-        query = db.query(Decision).filter(Decision.channel_id == channel_id)
-        
-        if status:
-            query = query.filter(Decision.status == status)
-        
-        return query.order_by(Decision.created_at.desc()).all()
-    except Exception as e:
-        logger.error(f"Database error in get_decisions_by_channel: {str(e)}")
-        return []
+    query = db.query(Decision).filter(Decision.channel_id == channel_id)
+    
+    if status:
+        query = query.filter(Decision.status == status)
+    
+    return query.order_by(Decision.created_at.desc()).all()
 
 # --- FUNCTION FOR PAGINATION ---
 def get_decisions_by_channel_paginated(
@@ -147,18 +142,15 @@ def get_decisions_by_channel_paginated(
 # --- END NEW FUNCTION ---
 
 
+@handle_db_errors("get_pending_decisions", default_return=[])
 def get_pending_decisions(db: Session, channel_id: Optional[str] = None) -> List[Decision]:
     """Get all pending decisions, optionally filtered by channel."""
-    try:
-        query = db.query(Decision).filter(Decision.status == "pending")
-        
-        if channel_id:
-            query = query.filter(Decision.channel_id == channel_id)
-        
-        return query.order_by(Decision.created_at.desc()).all()
-    except Exception as e:
-        logger.error(f"Database error in get_pending_decisions: {str(e)}")
-        return []
+    query = db.query(Decision).filter(Decision.status == "pending")
+    
+    if channel_id:
+        query = query.filter(Decision.channel_id == channel_id)
+    
+    return query.order_by(Decision.created_at.desc()).all()
 
 
 def get_decisions_by_status(db: Session, status: str, channel_id: Optional[str] = None) -> List[Decision]:
@@ -786,39 +778,3 @@ def validate_config_value(setting: str, value: Any) -> Tuple[bool, str]:
     
     else:
         return False, f"Unknown setting: {setting}"
-
-
-# -----------------------------
-# Backwards-compatible wrappers
-# -----------------------------
-def increment_approval_count(db: Session, decision_id: int) -> bool:
-    """Compatibility wrapper: increment approval_count for tests/older callers."""
-    try:
-        decision = db.query(Decision).filter(Decision.id == decision_id).first()
-        if not decision:
-            return False
-        decision.approval_count = (decision.approval_count or 0) + 1
-        db.commit()
-        return True
-    except Exception:
-        db.rollback()
-        return False
-
-
-def increment_rejection_count(db: Session, decision_id: int) -> bool:
-    """Compatibility wrapper: increment rejection_count for tests/older callers."""
-    try:
-        decision = db.query(Decision).filter(Decision.id == decision_id).first()
-        if not decision:
-            return False
-        decision.rejection_count = (decision.rejection_count or 0) + 1
-        db.commit()
-        return True
-    except Exception:
-        db.rollback()
-        return False
-
-
-def get_vote_by_decision_and_voter(db: Session, decision_id: int, voter_id: str):
-    """Compatibility alias for get_user_vote used by older tests."""
-    return get_user_vote(db, decision_id, voter_id)

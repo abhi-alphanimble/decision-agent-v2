@@ -23,7 +23,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.slack_client import slack_client
+from app.slack.client import slack_client
 from app.database import crud
 from database.base import SessionLocal
 

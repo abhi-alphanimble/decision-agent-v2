@@ -7,8 +7,8 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
-    Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -83,6 +83,8 @@ class Vote(Base):
     __table_args__ = (
         UniqueConstraint("decision_id", "voter_phone", name="unique_voter_per_decision"),
         CheckConstraint("vote_type IN ('approve', 'reject')", name="check_valid_vote_type"),
+        # Compound index for fast vote lookups by decision + voter
+        Index("ix_votes_decision_voter", "decision_id", "voter_phone"),
     )
 
     @property

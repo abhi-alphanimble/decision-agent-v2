@@ -18,9 +18,10 @@ from ..ai.ai_client import ai_client # Import AI client
 from ..config import get_context_logger
 logger = get_context_logger(__name__)
 
-# MVP Hardcoded values
-MVP_GROUP_SIZE = 10
-MVP_APPROVAL_THRESHOLD = 6  # Default approval threshold used by tests (ceil(10 * 60%))
+# Default values used when channel config or Slack API is unavailable
+# These are fallbacks only - actual values come from ChannelConfig in database
+DEFAULT_GROUP_SIZE = 10  # Fallback when Slack API fails
+DEFAULT_APPROVAL_PERCENTAGE = 60  # Used in ChannelConfig default
 
 # Helper constants
 DECISION_STATUS_EMOJI = {
@@ -29,7 +30,7 @@ DECISION_STATUS_EMOJI = {
     "rejected": "❌",
     "expired": "⌛",
 }
-DECISIONS_PER_PAGE = 10 # Pagination limit
+DECISIONS_PER_PAGE = 10  # Pagination limit
 
 # ============================================================================
 # DECISION COMMAND HANDLERS
@@ -80,11 +81,11 @@ def handle_propose_command(
         try:
             group_size = slack_client.get_channel_members_count(channel_id)
             if not isinstance(group_size, int) or group_size <= 0:
-                logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to MVP_GROUP_SIZE")
-                group_size = MVP_GROUP_SIZE
+                logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
+                group_size = DEFAULT_GROUP_SIZE
         except Exception as e:
             logger.error(f"❌ Error fetching group size: {e}")
-            group_size = MVP_GROUP_SIZE
+            group_size = DEFAULT_GROUP_SIZE
 
         # 2. Get/Update channel config
         config = crud.get_channel_config(db, channel_id, default_group_size=group_size)
@@ -182,11 +183,11 @@ def handle_add_command(
                 try:
                     group_size = slack_client.get_channel_members_count(channel_id)
                     if not isinstance(group_size, int) or group_size <= 0:
-                        logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to MVP_GROUP_SIZE")
-                        group_size = MVP_GROUP_SIZE
+                        logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
+                        group_size = DEFAULT_GROUP_SIZE
                 except Exception as e:
                     logger.error(f"❌ Error fetching group size for add: {e}")
-                    group_size = MVP_GROUP_SIZE
+                    group_size = DEFAULT_GROUP_SIZE
 
                 config = crud.get_channel_config(db, channel_id, default_group_size=group_size)
                 approval_threshold = int(config.group_size * (config.approval_percentage / 100.0))

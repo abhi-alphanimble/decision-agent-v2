@@ -1,4 +1,17 @@
-from .dependencies import get_db
+# Standard library imports
+import json
+import os
+import time
+from typing import Optional
+
+# Third-party imports
+import requests
+from fastapi import FastAPI, Request, status, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+
+# Local imports - Handlers
 from .handlers.decision_handlers import (
     handle_propose_command,
     handle_approve_command,
@@ -13,28 +26,22 @@ from .handlers.decision_handlers import (
     handle_suggest_command,
     handle_config_command
 )
-from .database import crud
-import requests
-from typing import Optional
-from fastapi import FastAPI, Request, status, Depends, HTTPException, BackgroundTasks
-from .command_parser import parse_message, get_help_text, CommandType, DecisionAction
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from datetime import datetime, UTC
-import time
-import logging
-import json
-import os
-
-from .schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
-from .ai.ai_client import ai_client
-from .dependencies import get_db, verify_database_connection
-from .models import Decision, Vote, ChannelConfig
-from .utils import get_utc_now
-from .slack import slack_client
-from .utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event
 from .handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
+
+# Local imports - Core
+from .command_parser import parse_message, get_help_text, CommandType, DecisionAction
+from .database import crud
+from .dependencies import get_db, get_db_session, verify_database_connection, run_in_threadpool
+from .models import Decision, Vote, ChannelConfig
+from .schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
+
+# Local imports - Services
+from .ai.ai_client import ai_client
+from .slack import slack_client
+from .utils import get_utc_now
+from .utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event
+
+# Database
 from database.base import check_db_connection, engine, Base
 
 # Configure logging
@@ -223,23 +230,39 @@ async def root():
 # Health check
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with status of all services."""
+    # Check database
     db_connected = check_db_connection()
+    
+    # Check AI client
     ai_status = "ready" if getattr(ai_client, 'initialized', False) and getattr(ai_client, 'model', None) else "not_configured"
+    
+    # Check Slack client
+    slack_status = "not_configured"
+    if hasattr(slack_client, 'client') and slack_client.client is not None:
+        slack_status = "ready"
+    elif hasattr(slack_client, 'signing_secret') and slack_client.signing_secret:
+        slack_status = "partial"  # Has signing secret but no client (maybe missing token)
+    
+    # Overall health - database is critical, others are optional
+    is_healthy = db_connected
+    
     response = {
-        "status": "healthy" if db_connected else "unhealthy",
+        "status": "healthy" if is_healthy else "unhealthy",
         "timestamp": get_utc_now(),
         "database": "connected" if db_connected else "disconnected",
-        "ai": ai_status
+        "ai": ai_status,
+        "slack": slack_status
     }
-    status_code = status.HTTP_200_OK if db_connected else status.HTTP_503_SERVICE_UNAVAILABLE
+    status_code = status.HTTP_200_OK if is_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse(
         status_code=status_code,
         content={
             "status": response["status"],
             "timestamp": response["timestamp"].isoformat(),
             "database": response["database"],
-            "ai": response["ai"]
+            "ai": response["ai"],
+            "slack": response["slack"]
         }
     )
 
@@ -345,14 +368,162 @@ async def get_stale_decisions(db: Session = Depends(get_db)):
         )
 
 
+# ============================================================================
+# SYNC HELPER FUNCTIONS (run in thread pool to avoid blocking async event loop)
+# ============================================================================
+
+def _handle_member_event_sync(event_type: str, user_id: str, user_name: str, channel_id: str) -> None:
+    """
+    Synchronous handler for member events. Runs in thread pool.
+    """
+    with get_db_session() as db:
+        if event_type == "member_joined_channel":
+            handle_member_joined_channel(user_id, user_name, channel_id, db)
+        elif event_type == "member_left_channel":
+            handle_member_left_channel(user_id, user_name, channel_id, db)
+
+
+def _handle_decision_command_sync(
+    parsed: "ParsedCommand",
+    user_id: str,
+    user_name: str,
+    channel_id: str
+) -> dict:
+    """
+    Synchronous handler for decision commands. Runs in thread pool.
+    
+    This function contains all database operations and runs in a thread pool
+    to avoid blocking the async event loop.
+    
+    Returns:
+        Response dict to send back to Slack
+    """
+    from .command_parser import ParsedCommand, DecisionAction
+    
+    with get_db_session() as db:
+        response = None
+        
+        if parsed.action == DecisionAction.PROPOSE:
+            response = handle_propose_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+            
+        elif parsed.action == DecisionAction.APPROVE:
+            response = handle_approve_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+            
+        elif parsed.action == DecisionAction.REJECT:
+            response = handle_reject_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+            
+        elif parsed.action == DecisionAction.SHOW:
+            response = handle_show_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+            
+        elif parsed.action == DecisionAction.MYVOTE:
+            response = handle_myvote_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+            
+        elif parsed.action == DecisionAction.LIST:
+            response = handle_list_command(
+                parsed=parsed,
+                channel_id=channel_id,
+                db=db
+            )
+
+        elif parsed.action == DecisionAction.ADD:
+            response = handle_add_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+            
+        elif parsed.action == DecisionAction.SEARCH:
+            response = handle_search_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+
+        elif parsed.action == DecisionAction.CONFIG:
+            response = handle_config_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+
+        elif parsed.action == DecisionAction.SUMMARIZE:
+            response = handle_summarize_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+
+        elif parsed.action == DecisionAction.SUGGEST:
+            response = handle_suggest_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db
+            )
+
+        else:
+            response = {
+                "text": f"⏳ Command `{parsed.action}` is coming soon!",
+                "response_type": "ephemeral"
+            }
+        
+        return response or {"text": "Command processed", "response_type": "ephemeral"}
+
+
+# ============================================================================
+# ASYNC EVENT PROCESSOR
+# ============================================================================
+
 async def process_slack_event(event_data: dict):
-    """Process Slack event in background"""
+    """
+    Process Slack event in background.
+    
+    Database operations are run in a thread pool to avoid blocking the event loop.
+    """
     try:
         logger.info(f"Processing event: {event_data}")
         
         # Handle member events (member_joined_channel, member_left_channel)
         if event_data.get("type") in ["member_joined_channel", "member_left_channel"]:
-            # Slack may use 'user'/'channel' or 'user_id'/'channel_id' depending on source
             user_id = event_data.get("user") or event_data.get("user_id", "")
             channel_id = event_data.get("channel") or event_data.get("channel_id", "")
             event_type = event_data.get("type")
@@ -363,16 +534,11 @@ async def process_slack_event(event_data: dict):
             except Exception:
                 user_name = "Unknown"
 
-            db = next(get_db())
-            try:
-                if event_type == "member_joined_channel":
-                    handle_member_joined_channel(user_id, user_name, channel_id, db)
-                elif event_type == "member_left_channel":
-                    handle_member_left_channel(user_id, user_name, channel_id, db)
-            finally:
-                db.close()
-
-            # Member event handled — stop further processing
+            # Run sync DB operation in thread pool
+            await run_in_threadpool(
+                _handle_member_event_sync,
+                event_type, user_id, user_name, channel_id
+            )
             return
 
         # Handle slash command
@@ -383,15 +549,14 @@ async def process_slack_event(event_data: dict):
             channel_id = event_data.get("channel_id", "")
             response_url = event_data.get("response_url", "")
             
-            # Parse command
+            # Parse command (sync but fast, no DB)
             parsed = parse_message(raw_text)
 
-            # Normalize action to DecisionAction enum in case Pydantic stored enum as value/string
+            # Normalize action to DecisionAction enum
             try:
                 if parsed.action and isinstance(parsed.action, str):
                     parsed.action = DecisionAction(parsed.action)
             except Exception:
-                # Leave as-is; parse_message will mark invalid actions elsewhere
                 pass
 
             logger.info(f"✅ Parsed: {parsed.model_dump()}")
@@ -408,150 +573,41 @@ async def process_slack_event(event_data: dict):
                         pass
                 return
             
-            # Handle HELP
+            # Handle HELP (no DB needed)
             if parsed.command_type == CommandType.HELP:
                 help_text = get_help_text()
-                logger.info(f"📖 Help command - sending help text to {response_url[:50]}...")
+                logger.info(f"📖 Help command - sending help text")
                 if response_url:
                     try:
                         resp = requests.post(response_url, json={
                             "text": help_text,
                             "response_type": "ephemeral"
                         })
-                        logger.info(f"📖 Help response status: {resp.status_code}, body: {resp.text[:100]}")
+                        logger.info(f"📖 Help response status: {resp.status_code}")
                     except Exception as e:
                         logger.error(f"❌ Failed to send help response: {e}")
                 return
             
-            # Handle DECISION commands
+            # Handle DECISION commands (DB operations in thread pool)
             if parsed.command_type == CommandType.DECISION:
-                # Get database session
-                db = next(get_db())
-                response = None  # Initialize response
+                # Run all DB operations in thread pool
+                response = await run_in_threadpool(
+                    _handle_decision_command_sync,
+                    parsed, user_id, user_name, channel_id
+                )
                 
-                try:
-                    if parsed.action == DecisionAction.PROPOSE:
-                        response = handle_propose_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-                    elif parsed.action == DecisionAction.APPROVE:
-                        response = handle_approve_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-                    elif parsed.action == DecisionAction.REJECT:
-                        response = handle_reject_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-                    elif parsed.action == DecisionAction.SHOW:
-                        response = handle_show_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-                    elif parsed.action == DecisionAction.MYVOTE:
-                        response = handle_myvote_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-                    elif parsed.action == DecisionAction.LIST:
-                        response = handle_list_command(
-                            parsed=parsed,
-                            channel_id=channel_id,
-                            db=db
-                        )
-
-                    elif parsed.action == DecisionAction.ADD:
-                        response = handle_add_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-                    elif parsed.action == DecisionAction.SEARCH:
-                        response = handle_search_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-                        
-
-                    elif parsed.action == DecisionAction.CONFIG:
-                        response = handle_config_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-
-                    elif parsed.action == DecisionAction.SUMMARIZE:
-                        response = handle_summarize_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-
-                    elif parsed.action == DecisionAction.SUGGEST:
-                        response = handle_suggest_command(
-                            parsed=parsed,
-                            user_id=user_id,
-                            user_name=user_name,
-                            channel_id=channel_id,
-                            db=db
-                        )
-
-                    else:
-                        # Other actions not implemented yet
-                        response = {
-                            "text": f"⏳ Command `{parsed.action}` is coming soon!",
-                            "response_type": "ephemeral"
-                        }
-                    
-                    # Send response back to Slack (if response_url exists)
-                    logger.info(f"📤 Attempting to send response to Slack. response_url={bool(response_url)}, response={response is not None}")
-                    if response_url and response is not None:
-                        try:
-                            response_text = response.get('text', '')
-                            logger.info(f"📤 Sending to Slack: {response_text[:100]}...")
-                            logger.info(f"📤 Full response payload: {response}")
-                            slack_response = requests.post(response_url, json=response, timeout=10)
-                            logger.info(f"📤 Slack response status: {slack_response.status_code}")
-                            logger.info(f"📤 Slack response body: {slack_response.text[:500] if slack_response.text else 'empty'}")
-                        except Exception as e:
-                            logger.error(f"Error sending response: {e}", exc_info=True)
-                    else:
-                        logger.warning(f"⚠️ Not sending response: response_url={response_url}, response={response}")
-                        
-                finally:
-                    db.close()
+                # Send response back to Slack
+                logger.info(f"📤 Attempting to send response to Slack. response_url={bool(response_url)}")
+                if response_url and response is not None:
+                    try:
+                        response_text = response.get('text', '')
+                        logger.info(f"📤 Sending to Slack: {response_text[:100]}...")
+                        slack_response = requests.post(response_url, json=response, timeout=10)
+                        logger.info(f"📤 Slack response status: {slack_response.status_code}")
+                    except Exception as e:
+                        logger.error(f"Error sending response: {e}", exc_info=True)
+                else:
+                    logger.warning(f"⚠️ Not sending response: response_url={response_url}, response={response}")
             
     except Exception as e:
         logger.error(f"Error processing event: {e}", exc_info=True)
