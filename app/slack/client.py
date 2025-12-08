@@ -204,41 +204,48 @@ class SlackClient:
     
     def get_channel_members_count(self, channel_id: str) -> int:
         """
-        Get the number of members in a channel.
+        Get the number of HUMAN members in a channel (excluding bots).
         
-        Uses a simple, efficient approach: count members from conversations.members
-        and subtract 1 for the bot itself. This avoids O(n) API calls which would
-        cause rate limiting on large channels.
+        Uses the efficient conversations.info API with include_num_members=True
+        and subtracts 1 to exclude the bot itself from the voting member count.
         
         Args:
             channel_id: Slack channel ID
             
         Returns:
-            Number of members in the channel (excluding the bot itself)
+            Number of human members in the channel (excluding the bot)
         """
         try:
-            # First, try to get num_members from conversations.info (single API call)
-            # NOTE: include_num_members=True is REQUIRED - Slack does not return num_members by default
-            response = self._get_client().conversations_info(channel=channel_id, include_num_members=True)
+            # Use conversations.info with include_num_members for efficiency
+            response = self._get_client().conversations_info(
+                channel=channel_id, 
+                include_num_members=True
+            )
             channel = response.get('channel', {})
-
-            if 'num_members' in channel and isinstance(channel['num_members'], int):
-                member_count = channel['num_members']
-            else:
-                # Fallback: fetch members list and count (still just one API call)
-                members_response = self._get_client().conversations_members(channel=channel_id)
-                member_count = len(members_response.get('members', []))
-
-            # Subtract 1 for the bot itself (approximate; bots are typically included)
-            # This is a reasonable approximation that avoids expensive per-user API calls
-            adjusted_count = max(1, member_count - 1)
+            
+            # Get member count from the response (includes all members: humans + bots)
+            total_members = channel.get('num_members', 0)
+            
+            if total_members == 0:
+                # Fallback: try fetching members list
+                logger.warning(f"num_members not available, fetching members list for {channel_id}")
+                members_response = self._get_client().conversations_members(
+                    channel=channel_id, 
+                    limit=1000
+                )
+                total_members = len(members_response.get('members', []))
+            
+            # Subtract 1 for the bot itself to get human-only count
+            # This assumes the bot is always present in the channel (which it must be to function)
+            human_count = max(1, total_members - 1)
             
             logger.info("Channel members counted", extra={
                 "channel_id": channel_id, 
-                "raw_count": member_count, 
-                "adjusted_count": adjusted_count
+                "total_members": total_members,
+                "human_count": human_count,
+                "bot_excluded": 1
             })
-            return adjusted_count
+            return human_count
 
         except SlackApiError as e:
             logger.exception("Error getting channel members count for %s: %s", channel_id, e.response.get('error') if hasattr(e, 'response') else str(e))

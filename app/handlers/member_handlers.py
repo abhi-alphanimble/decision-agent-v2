@@ -30,22 +30,8 @@ def handle_member_joined_channel(
     logger.info(f"👋 Member {user_name} ({user_id}) joined channel {channel_id}")
     
     try:
-        # Update channel config group_size immediately using filtered human count
-        try:
-            current_count = slack_client.get_channel_members_count(channel_id)
-            if isinstance(current_count, int) and current_count > 0:
-                updated = crud.update_channel_config(
-                    db=db,
-                    channel_id=channel_id,
-                    updated_by=user_id,
-                    updated_by_name=user_name,
-                    default_group_size=current_count,
-                    group_size=current_count
-                )
-                if updated:
-                    logger.info(f"🔄 Updated ChannelConfig.group_size for {channel_id} to {current_count} due to join by {user_name}")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not update ChannelConfig on join for {channel_id}: {e}")
+        # Note: group_size is no longer tracked in ChannelConfig
+        # It will be fetched dynamically from Slack when decisions are proposed
 
         # Get pending decisions for this channel
         pending_decisions = crud.get_pending_decisions(db, channel_id=channel_id)
@@ -146,25 +132,12 @@ def handle_member_left_channel(
     logger.info(f"👋 Member {user_name} ({user_id}) left channel {channel_id}")
     
     try:
-        # Get current channel member count from Slack (filtered human count)
+        # Get current channel member count from Slack
         try:
             current_member_count = slack_client.get_channel_members_count(channel_id)
             logger.info(f"📊 Current channel human member count: {current_member_count}")
-            # Update channel config with new count
-            try:
-                if isinstance(current_member_count, int) and current_member_count > 0:
-                    updated = crud.update_channel_config(
-                        db=db,
-                        channel_id=channel_id,
-                        updated_by=user_id,
-                        updated_by_name=user_name,
-                        default_group_size=current_member_count,
-                        group_size=current_member_count
-                    )
-                    if updated:
-                        logger.info(f"🔄 Updated ChannelConfig.group_size for {channel_id} to {current_member_count} due to leave by {user_name}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not update ChannelConfig on leave for {channel_id}: {e}")
+            # Note: group_size is no longer stored in ChannelConfig
+            # It will be fetched dynamically when decisions are proposed
         except Exception as e:
             logger.error(f"❌ Error getting channel members count: {e}")
             # Can't proceed without member count

@@ -129,20 +129,18 @@ class ChannelConfig(Base):
     channel_id = Column(String, primary_key=True, index=True)
     approval_percentage = Column(Integer, nullable=False, default=60)  # Stored as integer (60 = 60%)
     auto_close_hours = Column(Integer, nullable=False, default=48)
-    group_size = Column(Integer, nullable=False, default=10)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
     updated_by = Column(String, nullable=True)  # User ID who last updated
 
     __table_args__ = (
         CheckConstraint("approval_percentage > 0 AND approval_percentage <= 100", name="check_valid_percentage"),
         CheckConstraint("auto_close_hours > 0", name="check_valid_hours"),
-        CheckConstraint("group_size > 0", name="check_valid_group_size"),
     )
 
     def __repr__(self) -> str:
         return (
             f"<ChannelConfig(channel_id={self.channel_id}, "
-            f"approval={self.approval_percentage}%, hours={self.auto_close_hours}, size={self.group_size})>"
+            f"approval={self.approval_percentage}%, hours={self.auto_close_hours})>"
         )
 
 
@@ -159,7 +157,7 @@ class ConfigChangeLog(Base):
     changed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     __table_args__ = (
-        CheckConstraint("setting_name IN ('approval_percentage', 'auto_close_hours', 'group_size')", name="check_valid_setting_name"),
+        CheckConstraint("setting_name IN ('approval_percentage', 'auto_close_hours')", name="check_valid_setting_name"),
     )
 
     def __repr__(self) -> str:

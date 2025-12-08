@@ -551,13 +551,13 @@ def vote_on_decision(
 # CHANNEL CONFIG CRUD OPERATIONS (Updated default percentage)
 # ============================================================================
 
-def get_channel_config(db: Session, channel_id: str, default_group_size: int = 10) -> ChannelConfig:
+def get_channel_config(db: Session, channel_id: str) -> ChannelConfig:
     """
     Get channel configuration or create default if not exists.
-    If config exists but has default/stale group_size, update it with current member count.
+    Group size is now fetched dynamically from Slack for each decision.
     """
     try:
-        logger.info(f"🔍 Fetching config for channel {channel_id}, default_group_size={default_group_size}")
+        logger.info(f"🔍 Fetching config for channel {channel_id}")
         config = db.query(ChannelConfig).filter(ChannelConfig.channel_id == channel_id).first()
         
         if config is None:
@@ -566,26 +566,16 @@ def get_channel_config(db: Session, channel_id: str, default_group_size: int = 1
             config = ChannelConfig(
                 channel_id=channel_id,
                 approval_percentage=60,  # DEFAULT: 60%
-                auto_close_hours=48,
-                group_size=default_group_size
+                auto_close_hours=48
             )
             db.add(config)
             db.commit()
             db.refresh(config)
-            logger.info(f"✅ Created default config for channel {channel_id} with group_size={config.group_size}")
+            logger.info(f"✅ Created default config for channel {channel_id}")
         else:
-            # If config exists but group_size is different from actual member count, update it
-            logger.info(f"📋 Config exists for channel {channel_id}, current group_size={config.group_size}, new default_group_size={default_group_size}")
-            if config.group_size != default_group_size and default_group_size > 0:
-                old_size = config.group_size
-                config.group_size = default_group_size
-                db.commit()
-                db.refresh(config)
-                logger.info(f"🔄 Updated group_size for channel {channel_id}: {old_size} → {config.group_size}")
-            else:
-                logger.info(f"✅ Config group_size matches or default_group_size is 0, keeping group_size={config.group_size}")
+            logger.info(f"✅ Config exists for channel {channel_id}")
         
-        logger.info(f"✅ Returning config for channel {channel_id} with final group_size={config.group_size}")
+        logger.info(f"✅ Returning config for channel {channel_id}")
         return config
     except Exception as e:
         logger.error(f"Database error in get_channel_config: {str(e)}", exc_info=True)
@@ -594,8 +584,7 @@ def get_channel_config(db: Session, channel_id: str, default_group_size: int = 1
         return ChannelConfig(
             channel_id=channel_id,
             approval_percentage=60,
-            auto_close_hours=48,
-            group_size=default_group_size
+            auto_close_hours=48
         )
 
 
@@ -604,15 +593,15 @@ def update_channel_config(
     channel_id: str,
     updated_by: str,
     updated_by_name: Optional[str] = None,
-    default_group_size: int = 10,
     **kwargs
 ) -> Optional[ChannelConfig]:
     """
     Update channel configuration settings.
     Logs all changes to ConfigChangeLog table.
+    Note: group_size is no longer stored - it's fetched dynamically from Slack.
     """
     try:
-        config = get_channel_config(db, channel_id, default_group_size)
+        config = get_channel_config(db, channel_id)
         
         # Track changes for logging
         changes = []
@@ -632,12 +621,7 @@ def update_channel_config(
                 config.auto_close_hours = new_value
                 changes.append(('auto_close_hours', old_value, new_value))
         
-        if 'group_size' in kwargs:
-            old_value = config.group_size
-            new_value = kwargs['group_size']
-            if old_value != new_value:
-                config.group_size = new_value
-                changes.append(('group_size', old_value, new_value))
+        # Note: group_size is no longer handled here - it's always fetched from Slack
         
         config.updated_by = updated_by
         config.updated_at = get_utc_now()
@@ -748,6 +732,7 @@ def get_config_change_logs(
 def validate_config_value(setting: str, value: Any) -> Tuple[bool, str]:
     """
     Validate configuration values.
+    Note: group_size is no longer validated here as it's fetched dynamically from Slack.
     """
     if setting == "approval_percentage":
         try:
@@ -766,15 +751,6 @@ def validate_config_value(setting: str, value: Any) -> Tuple[bool, str]:
             return True, ""
         except (ValueError, TypeError):
             return False, "Auto-close hours must be a valid integer"
-    
-    elif setting == "group_size":
-        try:
-            val = int(value)
-            if val <= 0:
-                return False, "Group size must be greater than 0"
-            return True, ""
-        except (ValueError, TypeError):
-            return False, "Group size must be a valid integer"
     
     else:
         return False, f"Unknown setting: {setting}"

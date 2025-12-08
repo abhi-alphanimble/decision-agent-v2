@@ -20,7 +20,8 @@ logger = get_context_logger(__name__)
 
 # Default values used when channel config or Slack API is unavailable
 # These are fallbacks only - actual values come from ChannelConfig in database
-DEFAULT_GROUP_SIZE = 10  # Fallback when Slack API fails
+# Use a conservative fallback of 1 member when Slack cannot be queried
+DEFAULT_GROUP_SIZE = 1  # Fallback when Slack API fails
 DEFAULT_APPROVAL_PERCENTAGE = 60  # Used in ChannelConfig default
 
 # Helper constants
@@ -77,28 +78,29 @@ def handle_propose_command(
     
     # Create decision in database
     try:
-        # 1. Get real member count from Slack
+        # 1. Get real member count from Slack dynamically
         try:
             group_size = slack_client.get_channel_members_count(channel_id)
             if not isinstance(group_size, int) or group_size <= 0:
                 logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
                 group_size = DEFAULT_GROUP_SIZE
+            logger.info(f"📊 Fetched dynamic member count from Slack: {group_size} members in {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error fetching group size: {e}")
             group_size = DEFAULT_GROUP_SIZE
 
-        # 2. Get/Update channel config
-        config = crud.get_channel_config(db, channel_id, default_group_size=group_size)
+        # 2. Get channel config (no longer passes group_size to it)
+        config = crud.get_channel_config(db, channel_id)
         
-        # 3. Calculate threshold dynamically
+        # 3. Calculate threshold dynamically using the real group_size from Slack
         # Threshold = ceil(group_size * percentage / 100)
-        approval_threshold = math.ceil(config.group_size * (config.approval_percentage / 100.0))
+        approval_threshold = math.ceil(group_size * (config.approval_percentage / 100.0))
         
         # Ensure at least 1 vote needed
         if approval_threshold < 1:
             approval_threshold = 1
             
-        logger.info(f"📊 New Decision Params: Size={config.group_size}, %={config.approval_percentage}, Threshold={approval_threshold}")
+        logger.info(f"📊 New Decision Params: Size={group_size}, %={config.approval_percentage}, Threshold={approval_threshold}")
 
         decision = crud.create_decision(
             db=db,
@@ -106,7 +108,7 @@ def handle_propose_command(
             text=proposal_text,
             created_by=user_id,
             created_by_name=user_name,
-            group_size_at_creation=config.group_size,
+            group_size_at_creation=group_size,
             approval_threshold=approval_threshold
         )
         
@@ -179,18 +181,19 @@ def handle_add_command(
                 }
 
             try:
-                # Get group size and config
+                # Get group size and config dynamically
                 try:
                     group_size = slack_client.get_channel_members_count(channel_id)
                     if not isinstance(group_size, int) or group_size <= 0:
                         logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
                         group_size = DEFAULT_GROUP_SIZE
+                    logger.info(f"📊 Fetched dynamic member count from Slack: {group_size} members in {channel_id}")
                 except Exception as e:
                     logger.error(f"❌ Error fetching group size for add: {e}")
                     group_size = DEFAULT_GROUP_SIZE
 
-                config = crud.get_channel_config(db, channel_id, default_group_size=group_size)
-                approval_threshold = int(config.group_size * (config.approval_percentage / 100.0))
+                config = crud.get_channel_config(db, channel_id)
+                approval_threshold = int(group_size * (config.approval_percentage / 100.0))
                 if approval_threshold < 1:
                     approval_threshold = 1
 
@@ -201,7 +204,7 @@ def handle_add_command(
                     text=decision_text,
                     created_by=user_id,
                     created_by_name=user_name,
-                    group_size_at_creation=config.group_size,
+                    group_size_at_creation=group_size,
                     approval_threshold=approval_threshold,
                     status="approved",
                 )
@@ -1235,23 +1238,24 @@ def handle_config_command(
     
     # 1. If no args OR first arg is "show", show current config
     if not parsed.args or len(parsed.args) == 0 or (len(parsed.args) == 1 and parsed.args[0].lower() == "show"):
-        # Fetch real member count to ensure config is up-to-date
+        # Fetch real member count for display
         try:
             real_count = slack_client.get_channel_members_count(channel_id)
             if isinstance(real_count, int) and real_count > 0:
-                # This updates the DB if different
-                config = crud.get_channel_config(db, channel_id, default_group_size=real_count)
+                member_count_display = real_count
             else:
-                config = crud.get_channel_config(db, channel_id)
+                member_count_display = "Unknown"
         except Exception as e:
             logger.error(f"Error fetching member count for config: {e}")
-            config = crud.get_channel_config(db, channel_id)
+            member_count_display = "Unknown"
+        
+        config = crud.get_channel_config(db, channel_id)
         
         message = f"""⚙️ *Channel Configuration*
         
 *Approval Threshold:* {config.approval_percentage}%
 *Auto-close Hours:* {config.auto_close_hours}h
-*Group Size:* {config.group_size} members (synced with Slack)
+*Current Members:* {member_count_display} (fetched dynamically from Slack)
 
 *How to change settings:*
 `/decision config approval_percentage 75` - Set approval to 75%
@@ -1273,11 +1277,11 @@ def handle_config_command(
     value_str = parsed.args[1]
     
     # 3. Validate setting name
-    # Note: group_size is technically editable but auto-synced. Allowing manual edit for overrides if needed.
-    valid_settings = ["approval_percentage", "auto_close_hours", "group_size"]
+    # Note: group_size is no longer configurable here - it's always fetched dynamically from Slack
+    valid_settings = ["approval_percentage", "auto_close_hours"]
     if setting_name not in valid_settings:
         return {
-            "text": f"❌ Invalid setting: `{setting_name}`\n\n*Valid settings:* {', '.join(valid_settings)}",
+            "text": f"❌ Invalid setting: `{setting_name}`\n\n*Valid settings:* {', '.join(valid_settings)}\n\n*Note:* Group size is now fetched dynamically from Slack channel members.",
             "response_type": "ephemeral"
         }
         
