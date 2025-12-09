@@ -38,6 +38,7 @@ from .schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
 # Local imports - Services
 from .ai.ai_client import ai_client
 from .slack import slack_client
+from .integrations.oauth_callback import router as oauth_router
 from .utils import get_utc_now
 from .utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event
 
@@ -75,6 +76,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include OAuth router for Zoho CRM integration
+app.include_router(oauth_router)
 
 # Request logging middleware
 @app.middleware("http")

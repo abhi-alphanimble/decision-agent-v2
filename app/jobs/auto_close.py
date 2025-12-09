@@ -14,6 +14,7 @@ from ..models import Decision, ChannelConfig
 from ..slack import slack_client
 from ..utils import get_utc_now
 from ..database.crud import update_decision_status, close_decision_as_unreachable, get_channel_config
+from ..integrations.zoho_sync import sync_vote_to_zoho, is_zoho_enabled
 from database.base import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,15 @@ def check_stale_decisions():
                     f"✅ Auto-closed decision #{decision.id} with status '{final_status}' "
                     f"(👍 {decision.approval_count} vs 👎 {decision.rejection_count})"
                 )
+                
+                # Sync to Zoho CRM
+                if is_zoho_enabled():
+                    try:
+                        channel_name = slack_client.get_channel_info(decision.channel_id).get("name", "")
+                        sync_vote_to_zoho(decision, channel_name)
+                        logger.info(f"✅ Synced auto-closed decision to Zoho CRM")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to sync auto-closed decision to Zoho: {e}", exc_info=True)
                 
                 # Send Slack notification
                 send_auto_close_notification(decision)

@@ -14,6 +14,7 @@ from ..utils.display import format_vote_summary, display_vote_list
 from ..models import Decision # Import Decision model for type hinting
 from ..utils import truncate_text # NEW: Import the utility function
 from ..ai.ai_client import ai_client # Import AI client
+from ..integrations.zoho_sync import sync_decision_to_zoho, sync_vote_to_zoho, is_zoho_enabled
 
 from ..config import get_context_logger
 logger = get_context_logger(__name__)
@@ -113,6 +114,23 @@ def handle_propose_command(
         )
         
         logger.info(f"✅ Created decision #{decision.id} by {user_name}: '{proposal_text[:50]}...'")
+        
+        # Sync to Zoho CRM
+        if is_zoho_enabled():
+            try:
+                # Get channel name from Slack
+                channel_name = ""
+                try:
+                    channel_info = slack_client.get_channel_info(channel_id)
+                    channel_name = channel_info.get("name", "")
+                except Exception as e:
+                    logger.debug(f"Could not fetch channel name: {e}")
+                
+                sync_decision_to_zoho(decision, channel_name)
+                logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM")
+            except Exception as e:
+                logger.error(f"❌ Failed to sync to Zoho: {e}", exc_info=True)
+                # Continue execution - don't fail the main operation
         
         # Format success message
         response_text = format_proposal_success_message(decision)
@@ -327,6 +345,23 @@ def handle_approve_command(
         }
 
     logger.info(f"✅ Vote recorded: User {user_id} {'anonymously ' if is_anonymous else ''}approved #{decision_id}")
+
+    # Sync vote to Zoho CRM
+    if is_zoho_enabled():
+        try:
+            # Get channel name from Slack
+            channel_name = ""
+            try:
+                channel_info = slack_client.get_channel_info(channel_id)
+                channel_name = channel_info.get("name", "")
+            except Exception as e:
+                logger.debug(f"Could not fetch channel name: {e}")
+            
+            sync_vote_to_zoho(updated_decision, channel_name)
+            logger.info(f"✅ Synced vote for decision #{decision_id} to Zoho CRM")
+        except Exception as e:
+            logger.error(f"❌ Failed to sync vote to Zoho: {e}", exc_info=True)
+            # Continue execution - don't fail the main operation
 
     # 7. Format confirmation message
     confirmation = format_vote_confirmation(updated_decision, "approve", is_anonymous, user_id)
