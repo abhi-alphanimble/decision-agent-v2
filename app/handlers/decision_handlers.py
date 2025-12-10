@@ -269,7 +269,7 @@ def handle_approve_command(
 ) -> Dict[str, Any]:
     """
     Handle approval vote command.
-    Command: /decision approve <decision_id> [--anonymous|--anon|-a]
+    Command: /decision approve <decision_id>
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
     logger.info("Handling APPROVE command", extra={"user_name": user_name})
@@ -278,7 +278,7 @@ def handle_approve_command(
     if not parsed.args or len(parsed.args) == 0:
         logger.warning("❌ No decision ID provided")
         return {
-            "text": "❌ Please provide a decision ID.\n\n*Example:* `/decision approve 42`\n*Anonymous:* `/decision approve 42 --anonymous`",
+            "text": "❌ Please provide a decision ID.\n\n*Example:* `/decision approve 42`",
             "response_type": "ephemeral"
         }
 
@@ -291,11 +291,7 @@ def handle_approve_command(
             "response_type": "ephemeral"
         }
 
-    # 2. Check if vote is anonymous (support --anonymous, --anon, -a)
-    is_anonymous = parsed.flags.get("anonymous", False)
-    logger.info(f"🔒 Anonymous vote: {is_anonymous}")
-
-    # 3. Get decision from database
+    # 2. Get decision from database
     decision = crud.get_decision_by_id(db, decision_id)
 
     if not decision:
@@ -305,7 +301,7 @@ def handle_approve_command(
             "response_type": "ephemeral"
         }
 
-    # 4. Check if decision is still pending
+    # 3. Check if decision is still pending
     if decision.status != "pending":
         logger.warning(f"❌ Decision #{decision_id} is {decision.status}")
         return {
@@ -313,7 +309,7 @@ def handle_approve_command(
             "response_type": "ephemeral"
         }
 
-    # 5. Check if user already voted
+    # 4. Check if user already voted
     if crud.check_if_user_voted(db, decision_id, user_id):
         logger.warning(f"❌ User {user_name} already voted on #{decision_id}")
 
@@ -326,14 +322,13 @@ def handle_approve_command(
             "response_type": "ephemeral"
         }
 
-    # 6. Create vote and update counts atomically
+    # 5. Create vote and update counts atomically
     success, message, updated_decision = crud.vote_on_decision(
         db=db,
         decision_id=decision_id,
         voter_id=user_id,
         voter_name=user_name,
         vote_type="approve",
-        is_anonymous=is_anonymous,
         return_updated_decision=True,
     )
 
@@ -344,7 +339,7 @@ def handle_approve_command(
             "response_type": "ephemeral"
         }
 
-    logger.info(f"✅ Vote recorded: User {user_id} {'anonymously ' if is_anonymous else ''}approved #{decision_id}")
+    logger.info(f"✅ Vote recorded: User {user_id} approved #{decision_id}")
 
     # Sync vote to Zoho CRM
     if is_zoho_enabled():
@@ -363,10 +358,10 @@ def handle_approve_command(
             logger.error(f"❌ Failed to sync vote to Zoho: {e}", exc_info=True)
             # Continue execution - don't fail the main operation
 
-    # 7. Format confirmation message
-    confirmation = format_vote_confirmation(updated_decision, "approve", is_anonymous, user_id)
+    # 6. Format confirmation message
+    confirmation = format_vote_confirmation(updated_decision, "approve", user_id)
 
-    # 8. Check if decision was closed
+    # 7. Check if decision was closed
     if updated_decision.status == "approved":
         logger.info(f"🎉 Decision #{decision_id} APPROVED!")
 
@@ -381,7 +376,7 @@ def handle_approve_command(
         except Exception as e:
             logger.error(f"❌ Error sending approval notification: {e}")
 
-    # 9. Return confirmation to user
+    # 8. Return confirmation to user
     return {
         "text": confirmation,
         "response_type": "ephemeral"
@@ -397,7 +392,7 @@ def handle_reject_command(
 ) -> Dict[str, Any]:
     """
     Handle rejection vote command.
-    Command: /decision reject <decision_id> [--anonymous|--anon|-a]
+    Command: /decision reject <decision_id>
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
     logger.info("Handling REJECT command", extra={"user_name": user_name})
@@ -406,7 +401,7 @@ def handle_reject_command(
     if not parsed.args or len(parsed.args) == 0:
         logger.warning("❌ No decision ID provided")
         return {
-            "text": "❌ Please provide a decision ID.\n\n*Example:* `/decision reject 42`\n*Anonymous:* `/decision reject 42 --anonymous`",
+            "text": "❌ Please provide a decision ID.\n\n*Example:* `/decision reject 42`",
             "response_type": "ephemeral"
         }
     
@@ -419,11 +414,7 @@ def handle_reject_command(
             "response_type": "ephemeral"
         }
     
-    # 2. Check if vote is anonymous (support --anonymous, --anon, -a)
-    is_anonymous = parsed.flags.get("anonymous", False)
-    logger.info(f"🔒 Anonymous vote: {is_anonymous}")
-    
-    # 3. Get decision from database
+    # 2. Get decision from database
     decision = crud.get_decision_by_id(db, decision_id)
     
     if not decision:
@@ -433,7 +424,7 @@ def handle_reject_command(
             "response_type": "ephemeral"
         }
     
-    # 4. Check if decision is still pending
+    # 3. Check if decision is still pending
     if decision.status != "pending":
         logger.warning(f"❌ Decision #{decision_id} is {decision.status}")
         return {
@@ -441,7 +432,7 @@ def handle_reject_command(
             "response_type": "ephemeral"
         }
     
-    # 5. Check if user already voted
+    # 4. Check if user already voted
     if crud.check_if_user_voted(db, decision_id, user_id):
         logger.warning(f"❌ User {user_name} already voted on #{decision_id}")
         
@@ -454,14 +445,13 @@ def handle_reject_command(
             "response_type": "ephemeral"
         }
     
-    # 6. Create vote and update counts atomically
+    # 5. Create vote and update counts atomically
     success, message, updated_decision = crud.vote_on_decision(
         db=db,
         decision_id=decision_id,
         voter_id=user_id,
         voter_name=user_name,
         vote_type="reject",
-        is_anonymous=is_anonymous,
         return_updated_decision=True,
     )
     
@@ -472,12 +462,12 @@ def handle_reject_command(
             "response_type": "ephemeral"
         }
     
-    logger.info(f"✅ Vote recorded: User {user_id} {'anonymously ' if is_anonymous else ''}rejected #{decision_id}")
+    logger.info(f"✅ Vote recorded: User {user_id} rejected #{decision_id}")
     
-    # 7. Format confirmation message
-    confirmation = format_vote_confirmation(updated_decision, "reject", is_anonymous, user_id)
+    # 6. Format confirmation message
+    confirmation = format_vote_confirmation(updated_decision, "reject", user_id)
     
-    # 8. Check if decision was closed
+    # 7. Check if decision was closed
     if updated_decision.status == "rejected":
         logger.info(f"❌ Decision #{decision_id} REJECTED!")
         
@@ -492,7 +482,7 @@ def handle_reject_command(
         except Exception as e:
             logger.error(f"❌ Error sending rejection notification: {e}")
     
-    # 9. Return confirmation to user
+    # 8. Return confirmation to user
     return {
         "text": confirmation,
         "response_type": "ephemeral"
@@ -643,7 +633,7 @@ def handle_show_command(
     """
     Handle show/detail command.
     Command: /decision show <decision_id>
-    Shows full decision details with vote list (respecting anonymity).
+    Shows full decision details with vote list.
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
     logger.info("Handling SHOW command", extra={"user_name": user_name})
@@ -697,7 +687,7 @@ def handle_myvote_command(
     """
     Handle myvote command.
     Command: /decision myvote <decision_id>
-    Shows user their own vote (even if anonymous to others).
+    Shows user their own vote.
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
     logger.info("Handling MYVOTE command", extra={"user_name": user_name})
@@ -735,7 +725,7 @@ def handle_myvote_command(
     if not vote:
         logger.info(f"ℹ️ User {user_id} hasn't voted on #{decision_id}")
         return {
-            "text": f"ℹ️ You haven't voted on decision #{decision_id} yet.\n\n*Decision:* {decision.text}\n\n*How to vote:*\n- `/decision approve {decision_id}` - Vote to approve\n- `/decision reject {decision_id}` - Vote to reject\n- Add `--anonymous` to vote anonymously",
+            "text": f"ℹ️ You haven't voted on decision #{decision_id} yet.\n\n*Decision:* {decision.text}\n\n*How to vote:*\n- `/decision approve {decision_id}` - Vote to approve\n- `/decision reject {decision_id}` - Vote to reject",
             "response_type": "ephemeral"
         }
     
@@ -970,21 +960,19 @@ def format_proposal_success_message(decision) -> str:
 *How to vote:*
 - `/decision approve {decision.id}` - Vote to approve
 - `/decision reject {decision.id}` - Vote to reject
-- `/decision approve {decision.id} --anonymous` - Vote anonymously
 
 💡 *Tip:* Use `/decision show {decision.id}` to see details anytime
 """
 
 
-def format_vote_confirmation(decision, vote_type: str, is_anonymous: bool, user_id: str) -> str:
+def format_vote_confirmation(decision, vote_type: str, user_id: str) -> str:
     """Format vote confirmation message."""
     emoji = "✅" if vote_type == "approve" else "❌"
     vote_word = "approved" if vote_type == "approve" else "rejected"
-    anon_text = " anonymously" if is_anonymous else ""
     
-    message = f"""{emoji} *Vote Recorded{anon_text}*
+    message = f"""{emoji} *Vote Recorded*
 
-You voted to *{vote_word}* this decision{anon_text}:
+You voted to *{vote_word}* this decision:
 "{decision.text}"
 
 📊 *Current Status:*
@@ -997,9 +985,6 @@ You voted to *{vote_word}* this decision{anon_text}:
         remaining = decision.approval_threshold - max(decision.approval_count, decision.rejection_count)
         message += f"\n💡 *{remaining} more vote(s) needed to close this decision*"
     
-    if is_anonymous:
-        message += f"\n\n🔒 Your vote is anonymous - your identity won't be shown to others."
-    
     message += f"\n\n💡 Use `/decision myvote {decision.id}` to check your vote anytime"
     
     return message
@@ -1007,7 +992,7 @@ You voted to *{vote_word}* this decision{anon_text}:
 
 def format_decision_approved_message(decision, db: Session) -> str:
     """Format message when decision is approved."""
-    # Get votes to show who voted (respecting anonymity)
+    # Get votes to show who voted
     votes = crud.get_votes_by_decision(db, decision.id)
     vote_summary = display_vote_list(votes)
     
@@ -1030,7 +1015,7 @@ The team has approved this proposal! 🎊
 
 def format_decision_rejected_message(decision, db: Session) -> str:
     """Format message when decision is rejected."""
-    # Get votes to show who voted (respecting anonymity)
+    # Get votes to show who voted
     votes = crud.get_votes_by_decision(db, decision.id)
     vote_summary = display_vote_list(votes)
     
@@ -1054,7 +1039,6 @@ The team has rejected this proposal.
 def format_decision_detail(decision, votes: list) -> str:
     """
     Format full decision detail view with vote list.
-    Respects vote anonymity.
     """
     # Status emoji
     status_emoji = {
@@ -1083,7 +1067,7 @@ def format_decision_detail(decision, votes: list) -> str:
     message += f"\n*Votes:*\n{vote_summary}"
     
     if decision.status == "pending":
-        message += f"\n\n*How to vote:*\n- `/decision approve {decision.id}` - Vote to approve\n- `/decision reject {decision.id}` - Vote to reject\n- Add `--anonymous` to vote anonymously"
+        message += f"\n\n*How to vote:*\n- `/decision approve {decision.id}` - Vote to approve\n- `/decision reject {decision.id}` - Vote to reject"
     
     return message
 
@@ -1091,11 +1075,9 @@ def format_decision_detail(decision, votes: list) -> str:
 def format_user_vote_detail(vote, decision) -> str:
     """
     Format user's own vote details.
-    Shows everything including anonymity status.
     """
     vote_emoji = "👍" if vote.vote_type == "approve" else "👎"
     vote_text = "approved" if vote.vote_type == "approve" else "rejected"
-    anonymity_status = "🔒 Anonymous vote" if vote.is_anonymous else "👤 Public vote"
     
     message = f"""*Your Vote on Decision #{decision.id}*
 
@@ -1103,7 +1085,6 @@ def format_user_vote_detail(vote, decision) -> str:
 {decision.text}
 
 {vote_emoji} You {vote_text} this decision
-{anonymity_status}
 """
     
     # Add timestamp if available
@@ -1113,11 +1094,6 @@ def format_user_vote_detail(vote, decision) -> str:
         message += f"\n📅 *Voted on:* {vote.voted_at.strftime('%Y-%m-%d %H:%M UTC')}"
     
     message += f"\n📊 *Decision status:* {decision.status.upper()}\n"
-    
-    if vote.is_anonymous:
-        message += "\n🔒 Your identity is hidden from other users"
-    else:
-        message += "\n👤 Your vote is visible to other users"
     
     return message
 
@@ -1374,7 +1350,6 @@ def _help_command_final(parsed: Optional[ParsedCommand] = None, user_id: Optiona
 *Vote & Participate*
 • `/decision approve <id>` - Vote YES
 • `/decision reject <id>` - Vote NO
-• `/decision approve <id> --anonymous` - Vote anonymously
 
 *View & Track*
 • `/decision list` - Show active decisions
@@ -1388,7 +1363,6 @@ def _help_command_final(parsed: Optional[ParsedCommand] = None, user_id: Optiona
 • `/decision suggest <id>` - AI suggestions for next steps
 
 *Pro Tips*
-• Use `--anonymous` for sensitive topics.
 • Check `/decision myvote <id>` to see your vote.
 
 """

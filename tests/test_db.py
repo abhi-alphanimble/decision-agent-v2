@@ -46,20 +46,17 @@ def test_database():
             {
                 "voter_phone": "+1234567891",
                 "voter_name": "Alice Smith",
-                "vote_type": "approve",
-                "is_anonymous": False
+                "vote_type": "approve"
             },
             {
                 "voter_phone": "+1234567892",
                 "voter_name": "Bob Johnson",
-                "vote_type": "approve",
-                "is_anonymous": True
+                "vote_type": "approve"
             },
             {
                 "voter_phone": "+1234567893",
                 "voter_name": "Carol White",
-                "vote_type": "reject",
-                "is_anonymous": False
+                "vote_type": "reject"
             }
         ]
         
@@ -89,8 +86,7 @@ def test_database():
                 decision_id=decision.id,
                 voter_phone="+1234567891",  # Same voter
                 voter_name="Alice Smith",
-                vote_type="reject",
-                is_anonymous=False
+                vote_type="reject"
             )
             db.add(duplicate_vote)
             db.commit()

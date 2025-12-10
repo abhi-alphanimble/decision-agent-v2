@@ -3,13 +3,12 @@ Display utilities for formatting voting information.
 """
 
 
-def display_vote_list(votes: list, include_anonymous: bool = False) -> str:
+def display_vote_list(votes: list) -> str:
     """
     Format a list of votes into readable display text.
     
     Args:
         votes: List of Vote objects
-        include_anonymous: Whether to show names for anonymous votes
     
     Returns:
         Formatted vote list as string
@@ -19,10 +18,7 @@ def display_vote_list(votes: list, include_anonymous: bool = False) -> str:
     
     lines = []
     for vote in votes:
-        if vote.is_anonymous and not include_anonymous:
-            vote_name = "Anonymous"
-        else:
-            vote_name = vote.voter_name
+        vote_name = vote.voter_name
         
         vote_emoji = "✅" if vote.vote_type == "approve" else "❌"
         line = f"{vote_emoji} {vote_name}: {vote.vote_type.capitalize()}"

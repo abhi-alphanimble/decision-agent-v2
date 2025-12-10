@@ -313,7 +313,6 @@ def create_vote(
     voter_phone: Optional[str] = None,
     voter_name: Optional[str] = None,
     vote_type: Optional[str] = None,
-    is_anonymous: bool = False,
     # Backwards-compatible aliases
     voter_id: Optional[str] = None,
     user_id: Optional[str] = None,
@@ -364,14 +363,12 @@ def create_vote(
             voter_phone=voter_phone,
             voter_name=voter_name,
             vote_type=vote_type,
-            is_anonymous=is_anonymous,
             voted_at=get_utc_now()
         )
         
         db.add(db_vote)
         db.flush()
-        anon_text = " (anonymous)" if is_anonymous else ""
-        logger.info("Recorded vote", extra={"decision_id": decision_id, "voter_id": voter_phone, "voter_name": voter_name, "vote_type": vote_type, "is_anonymous": is_anonymous})
+        logger.info("Recorded vote", extra={"decision_id": decision_id, "voter_id": voter_phone, "voter_name": voter_name, "vote_type": vote_type})
         return db_vote
         
     except Exception as e:
@@ -476,7 +473,6 @@ def vote_on_decision(
     voter_id: str,
     voter_name: str,
     vote_type: str,
-    is_anonymous: bool = False,
     return_updated_decision: bool = False,
 ) -> Tuple:
     """
@@ -520,7 +516,6 @@ def vote_on_decision(
         voter_phone=voter_id,
         voter_name=voter_name,
         vote_type=vote_type,
-        is_anonymous=is_anonymous,
     )
 
     if vote is None:

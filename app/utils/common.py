@@ -26,29 +26,6 @@ def truncate_text(text: str, max_length: int = 100) -> str:
     return text[:max_length - 3] + "..."
 
 
-def parse_anonymous_flag(text: str) -> Tuple[str, bool]:
-    """
-    Parse anonymous flag from text (e.g., "--anonymous" or "-a").
-    
-    Args:
-        text: Input text to parse
-    
-    Returns:
-        Tuple of (cleaned_text, is_anonymous)
-    """
-    is_anonymous = False
-    cleaned_text = text
-    
-    if "--anonymous" in text.lower():
-        is_anonymous = True
-        cleaned_text = text.lower().replace("--anonymous", "").strip()
-    elif " -a" in text.lower():
-        is_anonymous = True
-        cleaned_text = text.lower().replace(" -a", "").strip()
-    
-    return cleaned_text, is_anonymous
-
-
 def extract_decision_id(text: str) -> int:
     """
     Extract decision ID from text (e.g., "vote 123" -> 123).

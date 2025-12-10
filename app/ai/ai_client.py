@@ -63,7 +63,7 @@ class AIClient:
         try:
             # Build context from decision and votes
             votes_summary = "\n".join([
-                f"- {v.voter_name}: {v.vote_type.upper()} {('(anonymous)' if v.is_anonymous else '')}"
+                f"- {v.voter_name}: {v.vote_type.upper()}"
                 for v in votes
             ]) if votes else "No votes yet"
             
@@ -96,7 +96,7 @@ Provide a 2-3 sentence summary of the decision and voting status."""
         try:
             # Build context from decision and votes
             votes_summary = "\n".join([
-                f"- {v.voter_name}: {v.vote_type.upper()} {('(anonymous)' if v.is_anonymous else '')}"
+                f"- {v.voter_name}: {v.vote_type.upper()}"
                 for v in votes
             ]) if votes else "No votes yet"
             

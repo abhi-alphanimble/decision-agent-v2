@@ -55,7 +55,6 @@ class VoteBase(BaseModel):
     voter_phone: str
     voter_name: str
     vote_type: Literal["approve", "reject"]
-    is_anonymous: bool = False
 
 class VoteCreate(VoteBase):
     decision_id: int

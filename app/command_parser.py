@@ -33,7 +33,7 @@ class DecisionAction(str, Enum):
     CONFIG = "config"
 
 
-VALID_CONFIG_SETTINGS = {"approval_percentage", "auto_close_hours", "group_size"}
+VALID_CONFIG_SETTINGS = {"approval_percentage", "auto_close_hours"}
 
 
 ACTION_ALIASES: Dict[str, DecisionAction] = {
@@ -112,8 +112,7 @@ def extract_id_from_command(text: str) -> Optional[int]:
 
 def parse_flags(text: str) -> Dict[str, bool]:
     """
-    Parse command flags including aliases.
-    Supports: --anonymous, --anon, -a
+    Parse command flags from text.
     """
     flags = {}
     
@@ -123,22 +122,14 @@ def parse_flags(text: str) -> Dict[str, bool]:
     
     for flag_name in matches:
         normalized = flag_name.lower()
-        # Normalize aliases to 'anonymous'
-        if normalized in ['anonymous', 'anon']:
-            flags['anonymous'] = True
-        else:
-            flags[normalized] = True
+        flags[normalized] = True
     
-    # Short form flags (-a)
+    # Short form flags (-x)
     short_flag_pattern = r'\s-([a-zA-Z])\b'
     short_matches = re.findall(short_flag_pattern, text)
     
     for flag_char in short_matches:
-        # Map single character flags
-        if flag_char.lower() == 'a':
-            flags['anonymous'] = True
-        else:
-            flags[flag_char.lower()] = True
+        flags[flag_char.lower()] = True
     
     return flags
 
@@ -367,10 +358,9 @@ Welcome! I help teams make decisions faster and more democratically.
   _Example: `/decision propose "Should we switch to Python 3.11?"`_
 • `/decision add "text"` - Alias for propose
 
-*🗳️ Vote & Participate*
+*🗝️ Vote & Participate*
 • `/decision approve <id>` - Vote YES
 • `/decision reject <id>` - Vote NO
-• `/decision approve <id> --anonymous` - Vote anonymously (hidden from others)
 • `/decision myvote <id>` - Check how you voted
 
 *📋 View & Track*
@@ -387,12 +377,11 @@ Welcome! I help teams make decisions faster and more democratically.
 *⚙️ Configuration (Admin Only)*
 • `/decision config show` - View current channel settings
 • `/decision config set <setting> <value>` - Update channel settings
-  - Available settings: `approval_percentage`, `auto_close_hours`, `group_size`
+  - Available settings: `approval_percentage`, `auto_close_hours`
   - Example: `/decision config set auto_close_hours 72`
 
 *💡 Pro Tips*
-• Use `--anonymous` (or `-a`) for sensitive topics.
-• You can change your vote anytime while the decision is pending.
+• You can't change your vote once submitted.
 • Use `list` to find the ID of a decision.
 
 """

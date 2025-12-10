@@ -75,7 +75,6 @@ class Vote(Base):
     voter_phone = Column(String, nullable=False, index=True)
     voter_name = Column(String, nullable=False)
     vote_type = Column(String, nullable=False)
-    is_anonymous = Column(Boolean, default=False, nullable=False)
     voted_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     decision = relationship("Decision", back_populates="votes")
@@ -98,7 +97,7 @@ class Vote(Base):
     def __repr__(self) -> str:
         return (
             f"<Vote(id={self.id}, decision_id={self.decision_id}, voter='{self.voter_name}', "
-            f"vote_type='{self.vote_type}', anonymous={self.is_anonymous})>"
+            f"vote_type='{self.vote_type}')>"
         )
 
     @property
@@ -149,7 +148,7 @@ class ConfigChangeLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     channel_id = Column(String, nullable=False, index=True)
-    setting_name = Column(String, nullable=False)  # approval_percentage, auto_close_hours, group_size
+    setting_name = Column(String, nullable=False)  # approval_percentage, auto_close_hours
     old_value = Column(Integer, nullable=False)
     new_value = Column(Integer, nullable=False)
     changed_by = Column(String, nullable=False)  # User ID
