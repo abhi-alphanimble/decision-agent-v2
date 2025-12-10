@@ -14,7 +14,7 @@ def parse_slash_command(payload: Dict) -> Dict:
         payload: Slash command payload from Slack
         
     Returns:
-        Parsed command data
+        Parsed command data including team_id for multi-workspace support
     """
     command = payload.get('command', '')
     text = payload.get('text', '').strip()
@@ -23,6 +23,7 @@ def parse_slash_command(payload: Dict) -> Dict:
     channel_id = payload.get('channel_id', '')
     channel_name = payload.get('channel_name', '')
     response_url = payload.get('response_url', '')
+    team_id = payload.get('team_id', '')  # Extract team_id for multi-workspace
     
     # Parse subcommand and arguments
     parts = text.split(maxsplit=1)
@@ -49,6 +50,7 @@ def parse_slash_command(payload: Dict) -> Dict:
         'channel_id': channel_id,
         'channel_name': channel_name,
         'response_url': response_url,
+        'team_id': team_id,  # Include team_id in parsed data
         'raw_text': text
     }
 

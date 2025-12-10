@@ -43,13 +43,26 @@ def handle_propose_command(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> Dict[str, Any]:
     """
     Handle proposal command.
+    
+    Args:
+        parsed: Parsed command data
+        user_id: Slack user ID
+        user_name: User's display name
+        channel_id: Slack channel ID
+        db: Database session
+        team_id: Slack team ID for multi-workspace support
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
-    logger.info("Handling PROPOSE command", extra={"user_name": user_name})
+    logger.info("Handling PROPOSE command", extra={"user_name": user_name, "team_id": team_id})
+    
+    # Get workspace-specific Slack client
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
     
     # Extract proposal text
     if not parsed.args or len(parsed.args) == 0:
@@ -81,7 +94,11 @@ def handle_propose_command(
     try:
         # 1. Get real member count from Slack dynamically
         try:
-            group_size = slack_client.get_channel_members_count(channel_id)
+            if ws_client:
+                group_size = ws_client.get_channel_members_count(channel_id)
+            else:
+                # Fallback to global client (for backward compatibility)
+                group_size = slack_client.get_channel_members_count(channel_id)
             if not isinstance(group_size, int) or group_size <= 0:
                 logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
                 group_size = DEFAULT_GROUP_SIZE
@@ -121,7 +138,10 @@ def handle_propose_command(
                 # Get channel name from Slack
                 channel_name = ""
                 try:
-                    channel_info = slack_client.get_channel_info(channel_id)
+                    if ws_client:
+                        channel_info = ws_client.get_channel_info(channel_id)
+                    else:
+                        channel_info = slack_client.get_channel_info(channel_id)
                     channel_name = channel_info.get("name", "")
                 except Exception as e:
                     logger.debug(f"Could not fetch channel name: {e}")
@@ -135,12 +155,12 @@ def handle_propose_command(
         # Format success message
         response_text = format_proposal_success_message(decision)
         
-        # Send to channel
+        # Send to channel using workspace-specific client
         try:
-            slack_client.send_message(
-                channel=channel_id,
-                text=response_text
-            )
+            if ws_client:
+                ws_client.send_message(channel=channel_id, text=response_text)
+            else:
+                slack_client.send_message(channel=channel_id, text=response_text)
             logger.info(f"✅ Sent proposal #{decision.id} to channel {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error sending to Slack: {e}", exc_info=True)
@@ -161,103 +181,114 @@ def handle_propose_command(
 
 
 def handle_add_command(
-            parsed: ParsedCommand,
-            user_id: str,
-            user_name: str,
-            channel_id: str,
-            db: Session
-        ) -> Dict[str, Any]:
-            """
-            Handle add command - create a pre-approved decision.
-            Command: /decision add "Decision text"
-            """
-            logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
-            logger.info("Handling ADD command", extra={"user_name": user_name})
+    parsed: ParsedCommand,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    db: Session,
+    team_id: str = ""
+) -> Dict[str, Any]:
+    """
+    Handle add command - create a pre-approved decision.
+    Command: /decision add "Decision text"
+    
+    Args:
+        team_id: Slack team ID for multi-workspace support
+    """
+    logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
+    logger.info("Handling ADD command", extra={"user_name": user_name, "team_id": team_id})
+    
+    # Get workspace-specific Slack client
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
 
-            # Extract text (same validation as propose)
-            if not parsed.args or len(parsed.args) == 0:
-                logger.warning("❌ No decision text provided for add")
-                return {
-                    "text": "❌ Please wrap the decision in quotes.\n\n*Example:* `/decision add \"Decision text\"`",
-                    "response_type": "ephemeral"
-                }
+    # Extract text (same validation as propose)
+    if not parsed.args or len(parsed.args) == 0:
+        logger.warning("❌ No decision text provided for add")
+        return {
+            "text": "❌ Please wrap the decision in quotes.\n\n*Example:* `/decision add \"Decision text\"`",
+            "response_type": "ephemeral"
+        }
 
-            decision_text = parsed.args[0].strip()
+    decision_text = parsed.args[0].strip()
 
-            if len(decision_text) < 10:
-                logger.warning(f"❌ Add text too short: {len(decision_text)} chars")
-                return {
-                    "text": f"❌ Decision text too short. Minimum 10 characters.\n\n*You provided:* {len(decision_text)} character(s)",
-                    "response_type": "ephemeral"
-                }
+    if len(decision_text) < 10:
+        logger.warning(f"❌ Add text too short: {len(decision_text)} chars")
+        return {
+            "text": f"❌ Decision text too short. Minimum 10 characters.\n\n*You provided:* {len(decision_text)} character(s)",
+            "response_type": "ephemeral"
+        }
 
-            if len(decision_text) > 500:
-                logger.warning(f"❌ Add text too long: {len(decision_text)} chars")
-                return {
-                    "text": f"❌ Decision text too long. Maximum 500 characters.",
-                    "response_type": "ephemeral"
-                }
+    if len(decision_text) > 500:
+        logger.warning(f"❌ Add text too long: {len(decision_text)} chars")
+        return {
+            "text": f"❌ Decision text too long. Maximum 500 characters.",
+            "response_type": "ephemeral"
+        }
 
-            try:
-                # Get group size and config dynamically
-                try:
-                    group_size = slack_client.get_channel_members_count(channel_id)
-                    if not isinstance(group_size, int) or group_size <= 0:
-                        logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
-                        group_size = DEFAULT_GROUP_SIZE
-                    logger.info(f"📊 Fetched dynamic member count from Slack: {group_size} members in {channel_id}")
-                except Exception as e:
-                    logger.error(f"❌ Error fetching group size for add: {e}")
-                    group_size = DEFAULT_GROUP_SIZE
+    try:
+        # Get group size and config dynamically
+        try:
+            if ws_client:
+                group_size = ws_client.get_channel_members_count(channel_id)
+            else:
+                group_size = slack_client.get_channel_members_count(channel_id)
+            if not isinstance(group_size, int) or group_size <= 0:
+                logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
+                group_size = DEFAULT_GROUP_SIZE
+            logger.info(f"📊 Fetched dynamic member count from Slack: {group_size} members in {channel_id}")
+        except Exception as e:
+            logger.error(f"❌ Error fetching group size for add: {e}")
+            group_size = DEFAULT_GROUP_SIZE
 
-                config = crud.get_channel_config(db, channel_id)
-                approval_threshold = int(group_size * (config.approval_percentage / 100.0))
-                if approval_threshold < 1:
-                    approval_threshold = 1
+        config = crud.get_channel_config(db, channel_id)
+        approval_threshold = int(group_size * (config.approval_percentage / 100.0))
+        if approval_threshold < 1:
+            approval_threshold = 1
 
-                # Create decision as approved
-                decision = crud.create_decision(
-                    db=db,
-                    channel_id=channel_id,
-                    text=decision_text,
-                    created_by=user_id,
-                    created_by_name=user_name,
-                    group_size_at_creation=group_size,
-                    approval_threshold=approval_threshold,
-                    status="approved",
-                )
+        # Create decision as approved
+        decision = crud.create_decision(
+            db=db,
+            channel_id=channel_id,
+            text=decision_text,
+            created_by=user_id,
+            created_by_name=user_name,
+            group_size_at_creation=group_size,
+            approval_threshold=approval_threshold,
+            status="approved",
+        )
 
-                # Mark approval_count to threshold so display is consistent
-                try:
-                    decision.approval_count = decision.approval_threshold
-                    db.commit()
-                    db.refresh(decision)
-                except Exception:
-                    db.rollback()
+        # Mark approval_count to threshold so display is consistent
+        try:
+            decision.approval_count = decision.approval_threshold
+            db.commit()
+            db.refresh(decision)
+        except Exception:
+            db.rollback()
 
-                logger.info(f"✅ Added pre-approved decision #{decision.id} by {user_name}")
+        logger.info(f"✅ Added pre-approved decision #{decision.id} by {user_name}")
 
-                # Notify channel
-                try:
-                    slack_client.send_message(
-                        channel=channel_id,
-                        text=format_decision_approved_message(decision, db)
-                    )
-                except Exception as e:
-                    logger.error(f"❌ Error sending add notification to Slack: {e}")
+        # Notify channel using workspace-specific client
+        try:
+            if ws_client:
+                ws_client.send_message(channel=channel_id, text=format_decision_approved_message(decision, db))
+            else:
+                slack_client.send_message(channel=channel_id, text=format_decision_approved_message(decision, db))
+        except Exception as e:
+            logger.error(f"❌ Error sending add notification to Slack: {e}")
 
-                return {
-                    "text": f"✅ Pre-approved decision added as #{decision.id}: \"{decision_text[:100]}{'...' if len(decision_text) > 100 else ''}\"",
-                    "response_type": "ephemeral"
-                }
+        return {
+            "text": f"✅ Pre-approved decision added as #{decision.id}: \"{decision_text[:100]}{'...' if len(decision_text) > 100 else ''}\"",
+            "response_type": "ephemeral"
+        }
 
-            except Exception as e:
-                logger.error(f"❌ Error creating pre-approved decision: {e}", exc_info=True)
-                db.rollback()
-                return {
-                    "text": "❌ Failed to add pre-approved decision. Please try again.",
-                    "response_type": "ephemeral"
-                }
+    except Exception as e:
+        logger.error(f"❌ Error creating pre-approved decision: {e}", exc_info=True)
+        db.rollback()
+        return {
+            "text": "❌ Failed to add pre-approved decision. Please try again.",
+            "response_type": "ephemeral"
+        }
 
 
 def handle_approve_command(
@@ -265,14 +296,22 @@ def handle_approve_command(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> Dict[str, Any]:
     """
     Handle approval vote command.
     Command: /decision approve <decision_id>
+    
+    Args:
+        team_id: Slack team ID for multi-workspace support
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
-    logger.info("Handling APPROVE command", extra={"user_name": user_name})
+    logger.info("Handling APPROVE command", extra={"user_name": user_name, "team_id": team_id})
+    
+    # Get workspace-specific Slack client
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
 
     # 1. Extract decision_id
     if not parsed.args or len(parsed.args) == 0:
@@ -347,7 +386,10 @@ def handle_approve_command(
             # Get channel name from Slack
             channel_name = ""
             try:
-                channel_info = slack_client.get_channel_info(channel_id)
+                if ws_client:
+                    channel_info = ws_client.get_channel_info(channel_id)
+                else:
+                    channel_info = slack_client.get_channel_info(channel_id)
                 channel_name = channel_info.get("name", "")
             except Exception as e:
                 logger.debug(f"Could not fetch channel name: {e}")
@@ -365,13 +407,13 @@ def handle_approve_command(
     if updated_decision.status == "approved":
         logger.info(f"🎉 Decision #{decision_id} APPROVED!")
 
-        # Send channel notification
+        # Send channel notification using workspace-specific client
         try:
             channel_message = format_decision_approved_message(updated_decision, db)
-            slack_client.send_message(
-                channel=channel_id,
-                text=channel_message
-            )
+            if ws_client:
+                ws_client.send_message(channel=channel_id, text=channel_message)
+            else:
+                slack_client.send_message(channel=channel_id, text=channel_message)
             logger.info(f"✅ Sent approval notification to channel {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error sending approval notification: {e}")
@@ -388,14 +430,22 @@ def handle_reject_command(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> Dict[str, Any]:
     """
     Handle rejection vote command.
     Command: /decision reject <decision_id>
+    
+    Args:
+        team_id: Slack team ID for multi-workspace support
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
-    logger.info("Handling REJECT command", extra={"user_name": user_name})
+    logger.info("Handling REJECT command", extra={"user_name": user_name, "team_id": team_id})
+    
+    # Get workspace-specific Slack client
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
     
     # 1. Extract decision_id
     if not parsed.args or len(parsed.args) == 0:
@@ -471,13 +521,13 @@ def handle_reject_command(
     if updated_decision.status == "rejected":
         logger.info(f"❌ Decision #{decision_id} REJECTED!")
         
-        # Send channel notification
+        # Send channel notification using workspace-specific client
         try:
             channel_message = format_decision_rejected_message(updated_decision, db)
-            slack_client.send_message(
-                channel=channel_id,
-                text=channel_message
-            )
+            if ws_client:
+                ws_client.send_message(channel=channel_id, text=channel_message)
+            else:
+                slack_client.send_message(channel=channel_id, text=channel_message)
             logger.info(f"✅ Sent rejection notification to channel {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error sending rejection notification: {e}")

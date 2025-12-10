@@ -1,7 +1,16 @@
 # Utils package
 from .common import get_utc_now, truncate_text, check_admin_permission, extract_decision_id
 from .display import display_vote_list, format_vote_summary
-from .workspace import get_workspace_token, get_slack_client_for_team, get_team_id_from_channel
+from .workspace import (
+    get_workspace_token,
+    get_slack_client_for_team,
+    save_installation,
+    remove_installation,
+    get_all_installations,
+    get_installation,
+    is_workspace_installed,
+)
+from .encryption import encrypt_token, decrypt_token, generate_encryption_key, is_token_encrypted
 from .slack_parsing import (
     parse_slash_command,
     parse_event_message,
@@ -25,9 +34,20 @@ __all__ = [
     'extract_decision_id',
     'display_vote_list',
     'format_vote_summary',
+    # Workspace utilities
     'get_workspace_token',
     'get_slack_client_for_team',
-    'get_team_id_from_channel',
+    'save_installation',
+    'remove_installation',
+    'get_all_installations',
+    'get_installation',
+    'is_workspace_installed',
+    # Encryption utilities
+    'encrypt_token',
+    'decrypt_token',
+    'generate_encryption_key',
+    'is_token_encrypted',
+    # Slack parsing
     'parse_slash_command',
     'parse_event_message',
     'parse_member_event',
@@ -41,3 +61,4 @@ __all__ = [
     'RecordNotFoundError',
     'DuplicateRecordError',
 ]
+

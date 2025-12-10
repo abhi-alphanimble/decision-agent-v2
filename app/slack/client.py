@@ -1,5 +1,8 @@
 """
-Slack client for API interactions
+Slack client for API interactions with multi-workspace support.
+
+In a distributed app, each workspace has its own bot token stored in the database.
+This module provides utilities to get workspace-specific clients.
 """
 
 import hmac
@@ -9,43 +12,45 @@ import os
 from typing import Optional
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from sqlalchemy.orm import Session
 from ..config import config
 from ..config.logging import get_context_logger
+from ..utils.encryption import decrypt_token
 
 logger = get_context_logger(__name__)
 
 
-# When running tests, avoid calling the real Slack API. Detect pytest via
-# the `PYTEST_CURRENT_TEST` environment variable (set by pytest) or a
-# generic `TESTING` env var. In test mode, use a minimal mock client that
-# returns safe defaults to keep unit tests deterministic and offline.
+# When running tests, avoid calling the real Slack API
 def _is_test_mode() -> bool:
     return bool(os.getenv("PYTEST_CURRENT_TEST") or os.getenv("TESTING"))
 
 
 class SlackClient:
+    """
+    Slack client wrapper with signature verification.
+    
+    For multi-workspace apps, use get_client_for_team() to get a workspace-specific
+    WebClient instead of using this global instance.
+    """
     client: Optional[WebClient]
     signing_secret: str
     
     def __init__(self):
-        """Initialize Slack WebClient with bot token.
-
-        Guard creation of the underlying `WebClient` so failures are logged
-        and do not raise during import/test collection.
+        """Initialize Slack client for signature verification.
+        
+        Note: In multi-workspace mode, we don't create a default WebClient.
+        Use get_client_for_team() to get workspace-specific clients.
         """
         self.client = None
-        self.signing_secret = config.SLACK_SIGNING_SECRET
-        try:
-            # Create WebClient lazily; if token is missing this will still
-            # construct the client object but should not perform network I/O.
-            self.client = WebClient(token=config.SLACK_BOT_TOKEN)
-        except Exception:
-            logger.exception("Failed to initialize Slack WebClient; continuing with client=None")
-
+        self.signing_secret = config.SLACK_SIGNING_SECRET or ""
+        
     def _get_client(self) -> WebClient:
         """Get the WebClient, raising if not initialized."""
         if self.client is None:
-            raise RuntimeError("Slack WebClient not initialized")
+            raise RuntimeError(
+                "Slack WebClient not initialized. "
+                "For multi-workspace apps, use get_client_for_team(team_id, db) instead."
+            )
         return self.client
         
     def verify_slack_signature(self, body: str, timestamp: str, signature: str) -> bool:
@@ -60,6 +65,10 @@ class SlackClient:
         Returns:
             True if signature is valid, False otherwise
         """
+        if not self.signing_secret:
+            logger.warning("No signing secret configured - skipping signature verification")
+            return True
+            
         # Check timestamp to prevent replay attacks (within 5 minutes)
         current_timestamp = int(time.time())
         if abs(current_timestamp - int(timestamp)) > 60 * 5:
@@ -83,203 +92,205 @@ class SlackClient:
             logger.warning("Invalid Slack signature")
         
         return is_valid
+
+
+class WorkspaceSlackClient:
+    """
+    Slack client for a specific workspace.
+    
+    Wraps WebClient with helper methods for common operations.
+    """
+    
+    def __init__(self, token: str, team_id: str):
+        """Initialize with workspace-specific token."""
+        self.client = WebClient(token=token)
+        self.team_id = team_id
+        self.logger = get_context_logger(__name__, team_id=team_id)
     
     def send_message(self, channel: str, text: str, blocks=None) -> dict:
-        """
-        Send a message to a Slack channel.
-        
-        Args:
-            channel: Channel ID or name
-            text: Message text (fallback if blocks are used)
-            blocks: Optional list of Block Kit blocks
-            
-        Returns:
-            Response from Slack API
-        """
+        """Send a message to a Slack channel."""
         try:
-            response = self._get_client().chat_postMessage(
+            response = self.client.chat_postMessage(
                 channel=channel,
                 text=text,
                 blocks=blocks
             )
-            logger.info("Message sent to channel", extra={"channel_id": channel})
+            self.logger.info("Message sent to channel", extra={"channel_id": channel})
             return response
         except SlackApiError as e:
-            logger.exception("Error sending message: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            self.logger.exception("Error sending message: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
     
     def send_thread_reply(self, channel: str, thread_ts: str, text: str, blocks=None) -> dict:
-        """
-        Send a reply in a message thread.
-        
-        Args:
-            channel: Channel ID
-            thread_ts: Timestamp of parent message
-            text: Reply text
-            blocks: Optional Block Kit blocks
-            
-        Returns:
-            Response from Slack API
-        """
+        """Send a reply in a message thread."""
         try:
-            response = self._get_client().chat_postMessage(
+            response = self.client.chat_postMessage(
                 channel=channel,
                 thread_ts=thread_ts,
                 text=text,
                 blocks=blocks
             )
-            logger.info("Thread reply sent to channel", extra={"channel_id": channel})
+            self.logger.info("Thread reply sent to channel", extra={"channel_id": channel})
             return response
         except SlackApiError as e:
-            logger.exception("Error sending thread reply: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            self.logger.exception("Error sending thread reply: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
     
     def send_ephemeral_message(self, channel: str, user: str, text: str) -> dict:
-        """
-        Send an ephemeral message (only visible to one user).
-        
-        Args:
-            channel: Channel ID
-            user: User ID to show message to
-            text: Message text
-            
-        Returns:
-            Response from Slack API
-        """
+        """Send an ephemeral message (only visible to one user)."""
         try:
-            response = self._get_client().chat_postEphemeral(
+            response = self.client.chat_postEphemeral(
                 channel=channel,
                 user=user,
                 text=text
             )
-            logger.info("Ephemeral message sent", extra={"channel_id": channel, "user_id": user})
+            self.logger.info("Ephemeral message sent", extra={"channel_id": channel, "user_id": user})
             return response
         except SlackApiError as e:
-            logger.exception("Error sending ephemeral message: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            self.logger.exception("Error sending ephemeral message: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
     
     def update_message(self, channel: str, ts: str, text: str, blocks=None) -> dict:
-        """
-        Update an existing message.
-        
-        Args:
-            channel: Channel ID
-            ts: Message timestamp
-            text: New message text
-            blocks: Optional new blocks
-            
-        Returns:
-            Response from Slack API
-        """
+        """Update an existing message."""
         try:
-            response = self._get_client().chat_update(
+            response = self.client.chat_update(
                 channel=channel,
                 ts=ts,
                 text=text,
                 blocks=blocks
             )
-            logger.info("Message updated in channel", extra={"channel_id": channel})
+            self.logger.info("Message updated in channel", extra={"channel_id": channel})
             return response
         except SlackApiError as e:
-            logger.exception("Error updating message: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            self.logger.exception("Error updating message: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
     
     def get_user_info(self, user_id: str) -> dict:
-        """
-        Get information about a user.
-        
-        Args:
-            user_id: Slack user ID
-            
-        Returns:
-            User info from Slack API
-        """
+        """Get information about a user."""
         try:
-            response = self._get_client().users_info(user=user_id)
-            logger.debug("Fetched user info", extra={"user_id": user_id})
+            response = self.client.users_info(user=user_id)
+            self.logger.debug("Fetched user info", extra={"user_id": user_id})
             return response['user']
         except SlackApiError as e:
-            logger.exception("Error getting user info: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            self.logger.exception("Error getting user info: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
     
     def get_channel_members_count(self, channel_id: str) -> int:
         """
         Get the number of HUMAN members in a channel (excluding bots).
-        
-        Uses the efficient conversations.info API with include_num_members=True
-        and subtracts 1 to exclude the bot itself from the voting member count.
-        
-        Args:
-            channel_id: Slack channel ID
-            
-        Returns:
-            Number of human members in the channel (excluding the bot)
         """
         try:
-            # Use conversations.info with include_num_members for efficiency
-            response = self._get_client().conversations_info(
+            response = self.client.conversations_info(
                 channel=channel_id, 
                 include_num_members=True
             )
             channel = response.get('channel', {})
-            
-            # Get member count from the response (includes all members: humans + bots)
             total_members = channel.get('num_members', 0)
             
             if total_members == 0:
-                # Fallback: try fetching members list
-                logger.warning(f"num_members not available, fetching members list for {channel_id}")
-                members_response = self._get_client().conversations_members(
+                self.logger.warning(f"num_members not available, fetching members list for {channel_id}")
+                members_response = self.client.conversations_members(
                     channel=channel_id, 
                     limit=1000
                 )
                 total_members = len(members_response.get('members', []))
             
-            # Subtract 1 for the bot itself to get human-only count
-            # This assumes the bot is always present in the channel (which it must be to function)
+            # Subtract 1 for the bot itself
             human_count = max(1, total_members - 1)
             
-            logger.info("Channel members counted", extra={
+            self.logger.info("Channel members counted", extra={
                 "channel_id": channel_id, 
                 "total_members": total_members,
                 "human_count": human_count,
-                "bot_excluded": 1
             })
             return human_count
 
         except SlackApiError as e:
-            logger.exception("Error getting channel members count for %s: %s", channel_id, e.response.get('error') if hasattr(e, 'response') else str(e))
-            raise
-        except Exception as e:
-            logger.exception("Unexpected error getting channel members count for %s: %s", channel_id, str(e))
+            self.logger.exception("Error getting channel members count: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
     
     def get_channel_info(self, channel_id: str) -> dict:
-        """
-        Get information about a channel.
-        
-        Args:
-            channel_id: Slack channel ID
-            
-        Returns:
-            Channel info from Slack API
-        """
+        """Get information about a channel."""
         try:
-            response = self._get_client().conversations_info(channel=channel_id)
-            logger.debug("Fetched channel info", extra={"channel_id": channel_id})
+            response = self.client.conversations_info(channel=channel_id)
+            self.logger.debug("Fetched channel info", extra={"channel_id": channel_id})
             return response['channel']
         except SlackApiError as e:
-            logger.exception("Error getting channel info: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            self.logger.exception("Error getting channel info: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
 
+
+def get_client_for_team(team_id: str, db: Session) -> Optional[WorkspaceSlackClient]:
+    """
+    Get a Slack client for a specific team/workspace.
+    
+    Fetches the bot token from the database and creates a workspace-specific client.
+    
+    Args:
+        team_id: Slack team/workspace ID
+        db: Database session
+        
+    Returns:
+        WorkspaceSlackClient for the team, or None if not found/installed
+    """
+    from ..models import SlackInstallation
+    
+    try:
+        installation = db.query(SlackInstallation).filter(
+            SlackInstallation.team_id == team_id
+        ).first()
+        
+        if not installation:
+            logger.warning(f"No installation found for team {team_id}")
+            return None
+        
+        # Decrypt the token if it's encrypted
+        token = decrypt_token(installation.access_token)
+        
+        if not token:
+            logger.error(f"Failed to get token for team {team_id}")
+            return None
+        
+        return WorkspaceSlackClient(token=token, team_id=team_id)
+        
+    except Exception as e:
+        logger.error(f"Error getting client for team {team_id}: {e}")
+        return None
+
+
+def get_raw_client_for_team(team_id: str, db: Session) -> Optional[WebClient]:
+    """
+    Get a raw Slack WebClient for a specific team.
+    
+    Use this when you need the raw WebClient instead of the wrapper.
+    
+    Args:
+        team_id: Slack team/workspace ID
+        db: Database session
+        
+    Returns:
+        WebClient for the team, or None if not found
+    """
+    workspace_client = get_client_for_team(team_id, db)
+    if workspace_client:
+        return workspace_client.client
+    return None
+
+
+# Global instance for signature verification only
+# For sending messages, use get_client_for_team()
 if _is_test_mode():
     # Provide a lightweight mock for tests
     class MockSlackClient:
         def __init__(self):
-            pass
+            self.signing_secret = "test_secret"
 
         def verify_slack_signature(self, body: str, timestamp: str, signature: str) -> bool:
             return True
+
+    class MockWorkspaceClient:
+        def __init__(self):
+            pass
 
         def send_message(self, channel: str, text: str, blocks=None) -> dict:
             logger.debug("Mock send_message called", extra={"channel": channel})
@@ -299,28 +310,20 @@ if _is_test_mode():
 
         def get_user_info(self, user_id: str) -> dict:
             logger.debug("Mock get_user_info called", extra={"user_id": user_id})
-            return {"id": user_id, "name": "test-user"}
+            return {"id": user_id, "name": "test-user", "real_name": "Test User"}
 
         def get_channel_members_count(self, channel_id: str) -> int:
             logger.debug("Mock get_channel_members_count called", extra={"channel_id": channel_id})
-            # Return 10 to align with DEFAULT_GROUP_SIZE used in tests
             return 10
 
         def get_channel_info(self, channel_id: str) -> dict:
             logger.debug("Mock get_channel_info called", extra={"channel_id": channel_id})
             return {"id": channel_id, "name": "test-channel"}
 
-    # Replace the global client with the mock
     slack_client = MockSlackClient()
+    
+    def get_client_for_team(team_id: str, db: Session = None) -> MockWorkspaceClient:
+        """Mock version for tests."""
+        return MockWorkspaceClient()
 else:
-    # Create the real client only when not in test mode
     slack_client = SlackClient()
-
-
-def get_client_for_team(team_id: str) -> Optional[WebClient]:
-    """Get a Slack WebClient for a specific team (placeholder)."""
-    # In a multi-workspace setup, this would fetch the token from DB
-    # For now, return the global slack_client
-    if isinstance(slack_client, SlackClient):
-        return slack_client.client
-    return None

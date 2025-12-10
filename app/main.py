@@ -376,9 +376,16 @@ async def get_stale_decisions(db: Session = Depends(get_db)):
 # SYNC HELPER FUNCTIONS (run in thread pool to avoid blocking async event loop)
 # ============================================================================
 
-def _handle_member_event_sync(event_type: str, user_id: str, user_name: str, channel_id: str) -> None:
+def _handle_member_event_sync(event_type: str, user_id: str, user_name: str, channel_id: str, team_id: str = "") -> None:
     """
     Synchronous handler for member events. Runs in thread pool.
+    
+    Args:
+        event_type: Type of event (member_joined_channel, member_left_channel)
+        user_id: Slack user ID
+        user_name: User's display name
+        channel_id: Slack channel ID
+        team_id: Slack team/workspace ID for multi-workspace support
     """
     with get_db_session() as db:
         if event_type == "member_joined_channel":
@@ -391,13 +398,21 @@ def _handle_decision_command_sync(
     parsed: "ParsedCommand",
     user_id: str,
     user_name: str,
-    channel_id: str
+    channel_id: str,
+    team_id: str = ""
 ) -> dict:
     """
     Synchronous handler for decision commands. Runs in thread pool.
     
     This function contains all database operations and runs in a thread pool
     to avoid blocking the async event loop.
+    
+    Args:
+        parsed: Parsed command data
+        user_id: Slack user ID
+        user_name: User's display name
+        channel_id: Slack channel ID
+        team_id: Slack team/workspace ID for multi-workspace support
     
     Returns:
         Response dict to send back to Slack
@@ -413,7 +428,8 @@ def _handle_decision_command_sync(
                 user_id=user_id,
                 user_name=user_name,
                 channel_id=channel_id,
-                db=db
+                db=db,
+                team_id=team_id
             )
             
         elif parsed.action == DecisionAction.APPROVE:
@@ -422,7 +438,8 @@ def _handle_decision_command_sync(
                 user_id=user_id,
                 user_name=user_name,
                 channel_id=channel_id,
-                db=db
+                db=db,
+                team_id=team_id
             )
             
         elif parsed.action == DecisionAction.REJECT:
@@ -431,7 +448,8 @@ def _handle_decision_command_sync(
                 user_id=user_id,
                 user_name=user_name,
                 channel_id=channel_id,
-                db=db
+                db=db,
+                team_id=team_id
             )
             
         elif parsed.action == DecisionAction.SHOW:
@@ -465,7 +483,8 @@ def _handle_decision_command_sync(
                 user_id=user_id,
                 user_name=user_name,
                 channel_id=channel_id,
-                db=db
+                db=db,
+                team_id=team_id
             )
             
         elif parsed.action == DecisionAction.SEARCH:
@@ -522,9 +541,13 @@ async def process_slack_event(event_data: dict):
     Process Slack event in background.
     
     Database operations are run in a thread pool to avoid blocking the event loop.
+    Multi-workspace support: team_id is extracted and passed to handlers.
     """
     try:
         logger.info(f"Processing event: {event_data}")
+        
+        # Extract team_id for multi-workspace support
+        team_id = event_data.get("team_id", "")
         
         # Handle member events (member_joined_channel, member_left_channel)
         if event_data.get("type") in ["member_joined_channel", "member_left_channel"]:
@@ -532,16 +555,23 @@ async def process_slack_event(event_data: dict):
             channel_id = event_data.get("channel") or event_data.get("channel_id", "")
             event_type = event_data.get("type")
 
-            try:
-                user_info = slack_client.get_user_info(user_id)
-                user_name = user_info.get("real_name", user_info.get("name", "Unknown"))
-            except Exception:
-                user_name = "Unknown"
+            # Get user info using workspace-specific client
+            user_name = "Unknown"
+            if team_id:
+                try:
+                    with get_db_session() as db:
+                        from .slack.client import get_client_for_team
+                        ws_client = get_client_for_team(team_id, db)
+                        if ws_client:
+                            user_info = ws_client.get_user_info(user_id)
+                            user_name = user_info.get("real_name", user_info.get("name", "Unknown"))
+                except Exception as e:
+                    logger.warning(f"Could not get user info for {user_id}: {e}")
 
             # Run sync DB operation in thread pool
             await run_in_threadpool(
                 _handle_member_event_sync,
-                event_type, user_id, user_name, channel_id
+                event_type, user_id, user_name, channel_id, team_id
             )
             return
 
@@ -552,6 +582,7 @@ async def process_slack_event(event_data: dict):
             user_name = event_data.get("user_name", "")
             channel_id = event_data.get("channel_id", "")
             response_url = event_data.get("response_url", "")
+            team_id = event_data.get("team_id", "")  # Get team_id from slash command
             
             # Parse command (sync but fast, no DB)
             parsed = parse_message(raw_text)
@@ -594,10 +625,10 @@ async def process_slack_event(event_data: dict):
             
             # Handle DECISION commands (DB operations in thread pool)
             if parsed.command_type == CommandType.DECISION:
-                # Run all DB operations in thread pool
+                # Run all DB operations in thread pool, passing team_id
                 response = await run_in_threadpool(
                     _handle_decision_command_sync,
-                    parsed, user_id, user_name, channel_id
+                    parsed, user_id, user_name, channel_id, team_id
                 )
                 
                 # Send response back to Slack
@@ -662,22 +693,34 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
             # Handle event callback
             if payload.get('type') == 'event_callback':
                 event = payload.get('event', {})
-                logger.info(f"Received event: {event.get('type')}")
-                
-                event = payload.get('event', {})
                 event_type = event.get('type')
-                logger.info(f"Received event: {event_type}")
+                team_id = payload.get('team_id', '')
+                logger.info(f"Received event: {event_type} from team {team_id}")
+
+                # App lifecycle events
+                if event_type == 'app_uninstalled':
+                    background_tasks.add_task(handle_app_uninstalled, team_id)
+                    return {"ok": True}
+                
+                if event_type == 'tokens_revoked':
+                    tokens = event.get('tokens', {})
+                    background_tasks.add_task(handle_tokens_revoked, team_id, tokens)
+                    return {"ok": True}
 
                 # Member events (join/leave) -> use dedicated parser
                 if event_type in ['member_joined_channel', 'member_left_channel']:
                     parsed_event = parse_member_event(event)
                     if parsed_event:
+                        # Add team_id to parsed event for multi-workspace support
+                        parsed_event['team_id'] = team_id
                         logger.info(f"Parsed member event: {parsed_event}")
                         background_tasks.add_task(process_slack_event, parsed_event)
                 else:
                     # Fallback to standard message/event parser
                     parsed_event = parse_event_message(event)
                     if parsed_event:
+                        # Add team_id to parsed event for multi-workspace support
+                        parsed_event['team_id'] = team_id
                         logger.info(f"Parsed event: {parsed_event}")
                         background_tasks.add_task(process_slack_event, parsed_event)
                 
@@ -741,23 +784,42 @@ async def slack_install():
     from app.config import config
     from fastapi.responses import RedirectResponse
     
-    # Scopes required for the bot
+    # Scopes required for the distributed bot
+    # See: https://api.slack.com/scopes
     scopes = [
-        "chat:write",
-        "commands",
-        "app_mentions:read",
-        "channels:history",
-        "groups:history",
-        "im:history",
-        "mpim:history"
+        # Messaging
+        "chat:write",            # Send messages
+        "chat:write.public",     # Send messages to channels without joining
+        
+        # Commands & Events
+        "commands",              # Add slash commands
+        "app_mentions:read",     # React to @mentions
+        
+        # Channel history (for context)
+        "channels:history",      # Read public channel messages
+        "groups:history",        # Read private channel messages
+        "im:history",            # Read DM messages
+        "mpim:history",          # Read group DM messages
+        
+        # User & Channel info
+        "users:read",            # Get user information
+        "channels:read",         # Get channel information
+        "groups:read",           # Get private channel information
+        "team:read",             # Get workspace information
+        
+        # Channel membership (for member count)
+        "channels:join",         # Join public channels
     ]
+    
+    # Build redirect URI
+    redirect_uri = f"{config.APP_BASE_URL}/slack/install/callback"
     
     # Build the OAuth URL
     oauth_url = (
         f"https://slack.com/oauth/v2/authorize"
         f"?client_id={config.SLACK_CLIENT_ID}"
         f"&scope={','.join(scopes)}"
-        f"&user_scope="  # Add user scopes if needed
+        f"&redirect_uri={redirect_uri}"
     )
     
     return RedirectResponse(url=oauth_url)
@@ -771,8 +833,9 @@ async def slack_callback(request: Request, code: Optional[str] = None, db: Sessi
     """
     from .config import config
     from slack_sdk.web import WebClient
-    from .models import SlackInstallation
-    from fastapi.responses import RedirectResponse
+    from fastapi.responses import HTMLResponse
+    from .utils.workspace import save_installation
+    from .templates import SUCCESS_PAGE_HTML
     
     if not code:
         # User denied installation
@@ -786,48 +849,40 @@ async def slack_callback(request: Request, code: Optional[str] = None, db: Sessi
     try:
         # 1. Exchange the temporary code for permanent tokens
         client = WebClient()
+        
+        # Build redirect URI - must match what's configured in Slack
+        redirect_uri = f"{config.APP_BASE_URL}/slack/install/callback"
+        
         oauth_response = client.oauth_v2_access(
             client_id=config.SLACK_CLIENT_ID,
             client_secret=config.SLACK_CLIENT_SECRET,
             code=code,
+            redirect_uri=redirect_uri,
         )
         
-        # 2. Extract and store the necessary tokens/IDs
+        # 2. Extract the necessary tokens/IDs
         team_id = oauth_response["team"]["id"]
         team_name = oauth_response["team"]["name"]
         bot_token = oauth_response["access_token"]
         bot_user_id = oauth_response["bot_user_id"]
         
-        # --- CRITICAL: PERSISTENCE STEP ---
-        # Save bot_token and team_id to database
         logger.info(f"🔑 Successfully installed in Team ID: {team_id} ({team_name})")
-        logger.info(f"💾 Storing new bot token for workspace {team_id}")
         
-        # Check if installation already exists
-        installation = db.query(SlackInstallation).filter(SlackInstallation.team_id == team_id).first()
+        # 3. Save installation with encrypted token
+        save_installation(
+            db=db,
+            team_id=team_id,
+            team_name=team_name,
+            access_token=bot_token,
+            bot_user_id=bot_user_id
+        )
         
-        if installation:
-            # Update existing installation
-            installation.access_token = bot_token
-            installation.bot_user_id = bot_user_id
-            installation.team_name = team_name
-            installation.installed_at = get_utc_now()
-            logger.info(f"🔄 Updated existing installation for {team_name}")
-        else:
-            # Create new installation
-            installation = SlackInstallation(
-                team_id=team_id,
-                team_name=team_name,
-                access_token=bot_token,
-                bot_user_id=bot_user_id
-            )
-            db.add(installation)
-            logger.info(f"✨ Created new installation for {team_name}")
-            
-        db.commit()
-        
-        # 3. Final Redirect to the new workspace in Slack
-        return RedirectResponse(url=f"slack://app?team={team_id}")
+        # 4. Return success page
+        success_html = SUCCESS_PAGE_HTML.format(
+            team_name=team_name,
+            team_id=team_id
+        )
+        return HTMLResponse(content=success_html, status_code=200)
 
     except Exception as e:
         logger.error(f"❌ OAuth Access Error: {e}", exc_info=True)
@@ -836,3 +891,54 @@ async def slack_callback(request: Request, code: Optional[str] = None, db: Sessi
             status_code=500, 
             detail="Failed to complete app installation."
         )
+
+
+# ============================================================================
+# STATIC PAGES (Privacy Policy, Support)
+# ============================================================================
+
+@app.get("/privacy")
+async def privacy_policy():
+    """Privacy Policy page - required for Slack App Directory."""
+    from fastapi.responses import HTMLResponse
+    from .templates import PRIVACY_POLICY_HTML
+    return HTMLResponse(content=PRIVACY_POLICY_HTML, status_code=200)
+
+
+@app.get("/support")
+async def support_page():
+    """Support page - required for Slack App Directory."""
+    from fastapi.responses import HTMLResponse
+    from .templates import SUPPORT_PAGE_HTML
+    return HTMLResponse(content=SUPPORT_PAGE_HTML, status_code=200)
+
+
+# ============================================================================
+# APP LIFECYCLE EVENTS (Uninstall, Token Revocation)
+# ============================================================================
+
+async def handle_app_uninstalled(team_id: str):
+    """
+    Handle app_uninstalled event - clean up installation data.
+    """
+    from .utils.workspace import remove_installation
+    
+    logger.info(f"🗑️ App uninstalled from team {team_id}")
+    
+    with get_db_session() as db:
+        remove_installation(db, team_id)
+
+
+async def handle_tokens_revoked(team_id: str, tokens: dict):
+    """
+    Handle tokens_revoked event - tokens are no longer valid.
+    """
+    from .utils.workspace import remove_installation
+    
+    logger.warning(f"🔒 Tokens revoked for team {team_id}: {tokens}")
+    
+    # If bot tokens are revoked, remove the installation
+    if tokens.get("oauth", []) or tokens.get("bot", []):
+        with get_db_session() as db:
+            remove_installation(db, team_id)
+
