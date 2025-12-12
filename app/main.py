@@ -502,7 +502,8 @@ def _handle_decision_command_sync(
                 user_id=user_id,
                 user_name=user_name,
                 channel_id=channel_id,
-                db=db
+                db=db,
+                team_id=team_id
             )
 
         elif parsed.action == DecisionAction.SUMMARIZE:

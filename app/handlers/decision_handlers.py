@@ -1289,23 +1289,40 @@ def handle_config_command(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> Dict[str, Any]:
     """
     Handle config command to view or update channel settings.
     Command: /decision config [setting] [value]
+    
+    Args:
+        parsed: Parsed command data
+        user_id: Slack user ID
+        user_name: User's display name
+        channel_id: Slack channel ID
+        db: Database session
+        team_id: Slack team ID for multi-workspace support
     """
     logger.info(f"⚙️ Handling CONFIG from {user_name} in {channel_id}")
     
+    # Get workspace-specific client for API calls
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
+    
     # 1. If no args OR first arg is "show", show current config
     if not parsed.args or len(parsed.args) == 0 or (len(parsed.args) == 1 and parsed.args[0].lower() == "show"):
-        # Fetch real member count for display
+        # Fetch real member count for display using workspace-specific client
         try:
-            real_count = slack_client.get_channel_members_count(channel_id)
-            if isinstance(real_count, int) and real_count > 0:
-                member_count_display = real_count
+            if ws_client:
+                real_count = ws_client.get_channel_members_count(channel_id)
+                if isinstance(real_count, int) and real_count > 0:
+                    member_count_display = real_count
+                else:
+                    member_count_display = "Unknown"
             else:
-                member_count_display = "Unknown"
+                logger.warning(f"No workspace client available for team {team_id}")
+                member_count_display = "Unknown (no workspace client)"
         except Exception as e:
             logger.error(f"Error fetching member count for config: {e}")
             member_count_display = "Unknown"
