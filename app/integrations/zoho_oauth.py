@@ -526,17 +526,39 @@ async def zoho_disconnect(request: Request, db: Session = Depends(get_db)):
     """
     Disconnect Zoho CRM for a team.
     
-    Request body (JSON):
-        {
-            "team_id": "T123456"
-        }
+    Accepts either:
+    - Form data: team_id field
+    - JSON body: {"team_id": "T123456"}
+    - Query param: ?team_id=T123456
         
     Returns:
-        JSON with success/error message
+        JSON with success/error message or redirect to dashboard
     """
     try:
-        data = await request.json()
-        team_id = data.get("team_id")
+        # Try to get team_id from multiple sources
+        team_id = None
+        
+        # 1. Try query params first
+        team_id = request.query_params.get("team_id")
+        
+        # 2. Try form data
+        if not team_id:
+            try:
+                form_data = await request.form()
+                team_id = form_data.get("team_id")
+            except Exception:
+                pass
+        
+        # 3. Try JSON body
+        if not team_id:
+            try:
+                body = await request.body()
+                if body:
+                    import json
+                    data = json.loads(body)
+                    team_id = data.get("team_id")
+            except Exception:
+                pass
         
         if not team_id:
             raise HTTPException(status_code=400, detail="team_id is required")
@@ -560,6 +582,19 @@ async def zoho_disconnect(request: Request, db: Session = Depends(get_db)):
         
         logger.info(f"Zoho disconnected for team {team_id}")
         
+        # Check if this was a form submission (browser) or API call
+        content_type = request.headers.get("content-type", "")
+        accept = request.headers.get("accept", "")
+        
+        # If it's a form submission, redirect to dashboard
+        if "form" in content_type or "text/html" in accept:
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(
+                url=f"/dashboard?team_id={team_id}",
+                status_code=303  # See Other - proper redirect after POST
+            )
+        
+        # Otherwise return JSON
         return JSONResponse(
             content={
                 "success": True,

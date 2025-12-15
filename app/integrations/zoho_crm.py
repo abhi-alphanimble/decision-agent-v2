@@ -66,6 +66,54 @@ class ZohoCRMClient:
             f"org: {self.installation.zoho_org_id}, domain: {domain}"
         )
     
+    def _get_decisions_module_name(self) -> str:
+        """
+        Get the name of the Decisions module in Zoho CRM.
+        
+        Returns:
+            Module API name: 'Slack_Decisions'
+        """
+        # Always use Slack_Decisions (no backward compatibility)
+        return "Slack_Decisions"
+
+    def _get_default_profiles(self) -> Optional[list[dict]]:
+        """Fetch available profiles to attach to the custom module.
+
+        Zoho v6 requires at least one profile for module creation. We fetch the
+        available profiles and include their IDs in the module payload.
+        """
+        access_token = self.get_access_token()
+        if not access_token:
+            logger.error("Cannot fetch profiles - no access token")
+            return None
+
+        url = f"{self.api_domain}/crm/v6/settings/profiles"
+        headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                logger.error(
+                    f"Failed to fetch profiles: {response.status_code} - {response.text}"
+                )
+                return None
+
+            data = response.json()
+            profiles = data.get("profiles", [])
+            profile_ids = [
+                {"id": p["id"]}
+                for p in profiles
+                if p.get("id")
+            ]
+            if not profile_ids:
+                logger.error("No profiles returned from Zoho; cannot create module")
+                return None
+            logger.debug(f"Using profiles for module creation: {profile_ids}")
+            return profile_ids
+        except Exception as e:
+            logger.error(f"Error fetching profiles: {e}", exc_info=True)
+            return None
+    
     def get_access_token(self) -> Optional[str]:
         """
         Get a valid access token, refreshing if necessary.
@@ -259,7 +307,7 @@ class ZohoCRMClient:
             logger.error(f"Could not obtain access token for team {self.team_id}")
             return None
         
-        url = f"{self.api_domain}/crm/v3/{endpoint}"
+        url = f"{self.api_domain}/crm/v6/{endpoint}"
         headers = {
             "Authorization": f"Zoho-oauthtoken {access_token}",
             "Content-Type": "application/json",
@@ -299,9 +347,12 @@ class ZohoCRMClient:
         Returns:
             Zoho API response with created record details, or None if failed
         """
+        # Get the correct module name (Slack_Decisions or Decisions)
+        module_name = self._get_decisions_module_name()
+        
         # Wrap data in 'data' key as per Zoho API format
         payload = {"data": [decision_data]}
-        result = self._make_request("POST", "Decisions", payload)
+        result = self._make_request("POST", module_name, payload)
         
         if result and result.get("data"):
             record = result["data"][0]
@@ -333,8 +384,9 @@ class ZohoCRMClient:
         Returns:
             Zoho API response, or None if failed
         """
+        module_name = self._get_decisions_module_name()
         payload = {"data": [update_data]}
-        result = self._make_request("PUT", f"Decisions/{decision_id}", payload)
+        result = self._make_request("PUT", f"{module_name}/{decision_id}", payload)
         
         if result and result.get("data"):
             record = result["data"][0]
@@ -363,7 +415,8 @@ class ZohoCRMClient:
         Returns:
             Decision record data, or None if not found
         """
-        result = self._make_request("GET", f"Decisions/{decision_id}")
+        module_name = self._get_decisions_module_name()
+        result = self._make_request("GET", f"{module_name}/{decision_id}")
         
         if result and result.get("data"):
             return result["data"][0]
@@ -382,8 +435,9 @@ class ZohoCRMClient:
         Returns:
             Zoho decision record, or None if not found
         """
+        module_name = self._get_decisions_module_name()
         # Fetch Decisions with essential fields
-        result = self._make_request("GET", "Decisions?fields=id,Name,Decision_Id")
+        result = self._make_request("GET", f"{module_name}?fields=id,Name,Decision_Id")
         
         if result and result.get("data"):
             for record in result["data"]:
@@ -412,7 +466,8 @@ class ZohoCRMClient:
             return False
         
         # Test with a simple request that lists decisions
-        url = f"{self.api_domain}/crm/v3/Decisions?fields=id"
+        module_name = self._get_decisions_module_name()
+        url = f"{self.api_domain}/crm/v3/{module_name}?fields=id"
         headers = {
             "Authorization": f"Zoho-oauthtoken {access_token}",
         }
@@ -440,10 +495,10 @@ class ZohoCRMClient:
 
     def create_decision_module(self) -> bool:
         """
-        Create the 'Decisions' custom module in Zoho CRM for this organization.
+        Create the 'Slack_Decisions' custom module in Zoho CRM for this organization.
         
         This should be called once after successful OAuth connection.
-        It creates the module with all required fields.
+        It creates the module with all required fields and makes it visible in sidebar.
         
         Returns:
             True if module was created (or already exists), False if failed
@@ -454,46 +509,101 @@ class ZohoCRMClient:
             return False
         
         # First, check if module already exists
-        module_exists = self._check_module_exists("Decisions")
-        if module_exists:
-            logger.info(f"✅ Decisions module already exists for team {self.team_id}")
+        if self._check_module_exists("Slack_Decisions"):
+            logger.info(f"✅ Slack_Decisions module already exists for team {self.team_id}")
             return True
+
+        profiles = self._get_default_profiles()
+        if not profiles:
+            logger.error("Cannot create module - no profiles available")
+            return False
         
-        # Create the module
-        url = f"{self.api_domain}/crm/v3/settings/modules"
+        # Create the module using Zoho CRM v6 API (v3 not supported for module creation)
+        # Module must have proper structure to appear in sidebar
+        url = f"{self.api_domain}/crm/v6/settings/modules"
         headers = {
             "Authorization": f"Zoho-oauthtoken {access_token}",
             "Content-Type": "application/json",
         }
         
+        # Zoho CRM custom module payload - needs specific format for sidebar visibility
+        # Using "Slack_Decisions" to avoid conflicts with any existing "Decisions" module
         module_payload = {
-            "data": [{
-                "api_name": "Decisions",
-                "singular_label": "Decision",
-                "plural_label": "Decisions",
-                "description": "Decisions created from Slack",
-                "customizable": True,
-                "visible": True
+            "modules": [{
+                "singular_label": "Slack Decision",
+                "plural_label": "Slack Decisions",
+                "api_name": "Slack_Decisions",
+                "module_name": "Slack_Decisions",
+                "visibility": 1,  # Visible to all users
+                "global_search_supported": True,
+                "feeds_required": False,
+                "web_link": None,
+                "quick_create": True,
+                "editable": True,
+                "deletable": True,
+                "creatable": True,
+                "viewable": True,
+                "show_as_tab": True,  # Show in sidebar/tab
+                "description": "Decisions created and synced from Slack Decision Agent",
+                "profiles": profiles,
+                "sequence_number": 25,
+                "inventory_template_supported": False
             }]
         }
         
+        logger.info(f"📤 Creating Slack_Decisions module for team {self.team_id}")
+        logger.debug(f"Module payload: {module_payload}")
+        
         try:
-            response = requests.post(url, json=module_payload, headers=headers, timeout=10)
+            response = requests.post(url, json=module_payload, headers=headers, timeout=15)
+            
+            logger.info(f"📥 Module creation response: status={response.status_code}")
+            logger.info(f"📥 Response body: {response.text[:1000] if response.text else 'empty'}")
             
             if response.status_code in [200, 201]:
-                logger.info(f"✅ Created Decisions module for team {self.team_id}")
+                response_data = response.json()
+                logger.info(f"✅ Created Slack_Decisions module for team {self.team_id}")
+                logger.info(f"📋 Module creation details: {response_data}")
                 
+                # Wait for module to become ready
+                if not self._verify_module_ready():
+                    logger.error("Module not ready after creation; aborting field creation")
+                    return False
+
                 # Now create the required fields
                 self._create_decision_fields()
                 return True
+            elif response.status_code == 202:
+                # 202 = Accepted, module creation is in progress
+                logger.info(f"⏳ Module creation accepted (202) for team {self.team_id}, may take a moment")
+                # Wait for readiness then create fields
+                if not self._verify_module_ready(max_attempts=15, interval=2):
+                    logger.error("Module not ready after 30s; aborting field creation")
+                    return False
+                self._create_decision_fields()
+                return True
             else:
+                # Log detailed error info
                 logger.error(
-                    f"Failed to create Decisions module for team {self.team_id}: "
-                    f"{response.status_code} - {response.text}"
+                    f"❌ Failed to create module for team {self.team_id}: "
+                    f"HTTP {response.status_code}"
                 )
+                try:
+                    error_data = response.json()
+                    logger.error(f"❌ Error details: {error_data}")
+                    # Check if it's a "module already exists" error
+                    if "already" in response.text.lower() or "duplicate" in response.text.lower():
+                        logger.info(f"ℹ️ Module may already exist, attempting to create fields")
+                        self._create_decision_fields()
+                        return True
+                except Exception:
+                    logger.error(f"❌ Raw error response: {response.text}")
                 return False
+        except requests.exceptions.Timeout:
+            logger.error(f"⏱️ Timeout creating module for team {self.team_id}")
+            return False
         except Exception as e:
-            logger.error(f"Error creating Decisions module for team {self.team_id}: {e}")
+            logger.error(f"❌ Error creating module for team {self.team_id}: {e}", exc_info=True)
             return False
 
     def _check_module_exists(self, module_name: str) -> bool:
@@ -502,7 +612,7 @@ class ZohoCRMClient:
         if not access_token:
             return False
         
-        url = f"{self.api_domain}/crm/v3/settings/modules"
+        url = f"{self.api_domain}/crm/v6/settings/modules"
         headers = {
             "Authorization": f"Zoho-oauthtoken {access_token}",
         }
@@ -522,94 +632,199 @@ class ZohoCRMClient:
             logger.error(f"Error checking module existence: {e}")
             return False
 
+    def _verify_module_ready(self, max_attempts: int = 10, interval: int = 2) -> bool:
+        """Verify module is ready for field creation by polling its presence."""
+        for attempt in range(max_attempts):
+            if self._check_module_exists("Slack_Decisions"):
+                return True
+            import time
+            time.sleep(interval)
+        return False
+
+    def _get_standard_layout_info(self, module_name: str) -> Optional[Dict[str, Any]]:
+        """Fetch Standard layout id plus sections so fields can be placed visibly."""
+        access_token = self.get_access_token()
+        if not access_token:
+            return None
+
+        url = f"{self.api_domain}/crm/v6/settings/layouts?module={module_name}"
+        headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                logger.error(
+                    f"Failed to fetch layouts for {module_name}: "
+                    f"{response.status_code} - {response.text}"
+                )
+                return None
+
+            data = response.json()
+            layouts = data.get("layouts", [])
+
+            def to_info(layout: Dict[str, Any]) -> Dict[str, Any]:
+                return {
+                    "id": str(layout.get("id")),
+                    "sections": layout.get("sections", []),
+                }
+
+            for layout in layouts:
+                if layout.get("name", "").lower() == "standard" and layout.get("id"):
+                    return to_info(layout)
+            if layouts:
+                return to_info(layouts[0])
+
+            logger.error(f"No layouts returned for module {module_name}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching layouts for {module_name}: {e}", exc_info=True)
+            return None
+
     def _create_decision_fields(self) -> bool:
-        """Create all required fields in the Decisions module."""
+        """Create all required fields in the Slack_Decisions module."""
         access_token = self.get_access_token()
         if not access_token:
             logger.error(f"Cannot create fields - no access token for team {self.team_id}")
             return False
         
-        url = f"{self.api_domain}/crm/v3/settings/modules/Decisions/fields"
+        # Always use Slack_Decisions module
+        module_name = "Slack_Decisions"
+
+        # Use the existing Standard layout (with sections) instead of creating a new one
+        layout_info = self._get_standard_layout_info(module_name)
+        if not layout_info:
+            logger.error("Cannot create fields - no layout info found")
+            return False
+
+        layout_id = layout_info["id"]
+        sections = layout_info.get("sections", [])
+
+        # Prefer an Information section; otherwise the first section
+        section_id = None
+        for section in sections:
+            if "information" in section.get("name", "").lower() and section.get("id"):
+                section_id = section["id"]
+                break
+        if not section_id and sections and sections[0].get("id"):
+            section_id = sections[0]["id"]
+
+        if not section_id:
+            logger.error("Cannot create fields - no section id found in layout")
+            return False
+
+        url = f"{self.api_domain}/crm/v6/settings/fields?module={module_name}"
         headers = {
             "Authorization": f"Zoho-oauthtoken {access_token}",
             "Content-Type": "application/json",
         }
         
-        # Define all required fields
+        logger.info(
+            f"📤 Creating fields in module '{module_name}' (layout: {layout_id}) "
+            f"for team {self.team_id}"
+        )
+        
+        # Define fields to match the standard layout shown in CRM
         fields = [
             {
-                "field_label": "Decision ID",
+                "field_label": "Decision Id",
                 "api_name": "Decision_Id",
-                "data_type": "Number",
+                "data_type": "integer",
+                "length": 9,
                 "decimal_places": 0,
-                "unique": True,
-                "required": True
+                "unique": {"casesensitive": False},
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
+            },
+            {
+                "field_label": "Decision Name",
+                "api_name": "Decision_Name",
+                "data_type": "text",
+                "length": 255,
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
             },
             {
                 "field_label": "Decision",
                 "api_name": "Decision",
-                "data_type": "TextArea",
-                "required": True,
-                "max_length": 1000
+                "data_type": "textarea",
+                "required": False,
+                "field_read_permission": {"type": "read_only"},
+                "textarea": {"type": "large", "max_length": 2000}
             },
             {
                 "field_label": "Decision By",
                 "api_name": "Decision_By",
-                "data_type": "SingleLine",
-                "required": True,
-                "max_length": 255
+                "data_type": "text",
+                "length": 255,
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
             },
             {
-                "field_label": "Approve Count",
-                "api_name": "Approve_Count",
-                "data_type": "Number",
-                "decimal_places": 0,
-                "default_value": "0"
-            },
-            {
-                "field_label": "Reject Count",
-                "api_name": "Reject_Count",
-                "data_type": "Number",
-                "decimal_places": 0,
-                "default_value": "0"
-            },
-            {
-                "field_label": "Total Vote",
-                "api_name": "Total_Vote",
-                "data_type": "Number",
-                "decimal_places": 0,
-                "default_value": "0"
-            },
-            {
-                "field_label": "Status",
-                "api_name": "Status",
-                "data_type": "Picklist",
-                "picklist_values": ["Pending", "Approved", "Rejected", "Expired"],
-                "default_value": "Pending"
+                "field_label": "Decision Owner",
+                "api_name": "Decision_Owner",
+                "data_type": "text",
+                "length": 255,
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
             },
             {
                 "field_label": "Propose Time",
                 "api_name": "Propose_Time",
-                "data_type": "DateTime",
-                "required": False
+                "data_type": "datetime",
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
             },
             {
-                "field_label": "Slack Team ID",
-                "api_name": "Slack_Team_Id",
-                "data_type": "SingleLine",
-                "max_length": 50
+                "field_label": "Approve Count",
+                "api_name": "Approve_Count",
+                "data_type": "integer",
+                "length": 9,
+                "decimal_places": 0,
+                "default_value": "0",
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
             },
             {
-                "field_label": "Slack Channel ID",
-                "api_name": "Slack_Channel_Id",
-                "data_type": "SingleLine",
-                "max_length": 50
+                "field_label": "Reject Count",
+                "api_name": "Reject_Count",
+                "data_type": "integer",
+                "length": 9,
+                "decimal_places": 0,
+                "default_value": "0",
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
+            },
+            {
+                "field_label": "Total Vote",
+                "api_name": "Total_Vote",
+                "data_type": "integer",
+                "length": 9,
+                "decimal_places": 0,
+                "default_value": "0",
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
+            },
+            {
+                "field_label": "Status",
+                "api_name": "Status",
+                "data_type": "text",
+                "length": 100,
+                "required": False,
+                "field_read_permission": {"type": "read_only"}
             }
         ]
         
         created_count = 0
         for field in fields:
-            payload = {"data": [field]}
+            payload = {
+                "fields": [{
+                    **field,
+                    "layouts": [{
+                        "id": layout_id,
+                        "sections": [{"id": section_id}]
+                    }]
+                }]
+            }
             
             try:
                 response = requests.post(url, json=payload, headers=headers, timeout=10)
