@@ -483,7 +483,12 @@ async def zoho_status(team_id: str, db: Session = Depends(get_db)):
     # Check if token is expired or about to expire
     is_expired = False
     if installation.token_expires_at:
-        is_expired = datetime.now(UTC) >= installation.token_expires_at
+        # Handle timezone-naive datetimes from database
+        token_expires = installation.token_expires_at
+        if token_expires.tzinfo is None:
+            # Make it timezone-aware by assuming UTC
+            token_expires = token_expires.replace(tzinfo=UTC)
+        is_expired = datetime.now(UTC) >= token_expires
     
     return JSONResponse(
         content={

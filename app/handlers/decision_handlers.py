@@ -174,6 +174,12 @@ def handle_propose_command(
             
             if not zoho_installation:
                 # Team doesn't have Zoho connected - show dashboard URL
+                # DEBUG: Log the raw APP_BASE_URL value
+                import os
+                raw_env_value = os.getenv('APP_BASE_URL', 'NOT_SET')
+                logger.warning(f"🔍 DEBUG: os.getenv('APP_BASE_URL') = {repr(raw_env_value)}")
+                logger.warning(f"🔍 DEBUG: config.APP_BASE_URL = {repr(config.APP_BASE_URL)}")
+                
                 dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
                 logger.info(f"✅ Adding dashboard URL to response: {dashboard_url}")
                 response_text += f"\n\n💡 *Want to sync decisions to Zoho CRM?*\n"

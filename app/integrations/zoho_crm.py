@@ -77,7 +77,11 @@ class ZohoCRMClient:
         # Check if token is still valid (with 5-minute buffer)
         if self.access_token and self.token_expiry:
             now = datetime.now(UTC)
-            if now < (self.token_expiry - timedelta(minutes=5)):
+            # Handle timezone-naive datetimes from database
+            token_expiry = self.token_expiry
+            if token_expiry.tzinfo is None:
+                token_expiry = token_expiry.replace(tzinfo=UTC)
+            if now < (token_expiry - timedelta(minutes=5)):
                 logger.debug(f"Using cached access token for team {self.team_id}")
                 return self.access_token
         
