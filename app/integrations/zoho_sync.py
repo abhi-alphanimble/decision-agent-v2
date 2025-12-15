@@ -37,6 +37,8 @@ def map_decision_to_zoho(decision: Decision, channel_name: Optional[str] = None)
     - Total_Vote: Total vote count
     - Status: Decision status (Pending, Approved, Rejected, Expired)
     - Propose_Time: When the decision was proposed/created
+    - Slack_Team_Id: Source Slack workspace ID
+    - Slack_Channel_Id: Source Slack channel ID
     
     Args:
         decision: Decision instance
@@ -55,6 +57,8 @@ def map_decision_to_zoho(decision: Decision, channel_name: Optional[str] = None)
         "Total_Vote": (decision.approval_count or 0) + (decision.rejection_count or 0),
         "Status": map_status(decision.status),
         "Propose_Time": format_datetime(decision.created_at),
+        "Slack_Team_Id": decision.team_id or "",
+        "Slack_Channel_Id": decision.channel_id or "",
     }
 
 

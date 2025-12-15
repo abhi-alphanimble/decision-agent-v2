@@ -1,7 +1,10 @@
 
+import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import config
+
+logger = logging.getLogger(__name__)
 
 # Create engine with connection pooling
 engine = create_engine(
@@ -51,5 +54,5 @@ def check_db_connection():
         db.close()
         return True
     except Exception as e:
-        print(f"Database connection failed: {e}")
+        logger.error(f"Database connection failed: {e}")
         return False

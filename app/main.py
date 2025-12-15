@@ -38,7 +38,6 @@ from .schemas import HealthResponse, RootResponse, StatusResponse, ErrorResponse
 # Local imports - Services
 from .ai.ai_client import ai_client
 from .slack import slack_client
-from .integrations.oauth_callback import router as oauth_router
 from .integrations.zoho_oauth import router as zoho_oauth_router
 from .integrations.dashboard import dashboard_router
 from .utils import get_utc_now
@@ -79,8 +78,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include OAuth router for Zoho CRM integration
-app.include_router(oauth_router)
+# Include OAuth routers for Zoho CRM integration
 app.include_router(zoho_oauth_router)
 app.include_router(dashboard_router)
 
@@ -609,8 +607,8 @@ async def process_slack_event(event_data: dict):
                             "text": f"❌ Error: {parsed.error_message}",
                             "response_type": "ephemeral"
                         })
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to send error response: {e}")
                 return
             
             # Handle HELP (no DB needed)
@@ -658,8 +656,8 @@ async def process_slack_event(event_data: dict):
                     "text": f"❌ An error occurred: {str(e)}",
                     "response_type": "ephemeral"
                 })
-            except:
-                pass
+            except Exception as notify_err:
+                logger.debug(f"Failed to notify user of error: {notify_err}")
 
 
 # Slack webhook endpoint

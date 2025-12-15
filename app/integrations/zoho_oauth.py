@@ -419,13 +419,30 @@ async def zoho_install_callback(
         db.commit()
         logger.info(f"✅ Zoho connected successfully for team {team_id}")
         
+        # Initialize the Decisions module and fields for this organization
+        module_status = "initialized"
+        try:
+            from .zoho_crm import ZohoCRMClient
+            zoho_client = ZohoCRMClient(team_id, db)
+            if zoho_client.create_decision_module():
+                logger.info(f"✅ Decisions module initialized for team {team_id}")
+                module_status = "initialized"
+            else:
+                logger.warning(f"⚠️ Module creation had issues for team {team_id}")
+                module_status = "partial"
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize module for team {team_id}: {e}", exc_info=True)
+            module_status = "error"
+            # Don't fail the entire OAuth - user is already connected
+        
         # Show success page
         team_name = slack_installation.team_name or team_id
         return HTMLResponse(
             content=ZOHO_SUCCESS_PAGE_HTML.format(
                 team_name=team_name,
                 zoho_org_id=zoho_org_id or "Unknown",
-                zoho_domain=zoho_domain
+                zoho_domain=zoho_domain,
+                module_status=module_status
             )
         )
         
