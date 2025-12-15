@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -27,6 +28,7 @@ class Decision(Base):
     proposer_phone = Column(String, nullable=False, index=True)
     proposer_name = Column(String, nullable=False)
     channel_id = Column(String, nullable=False, index=True)
+    team_id = Column(String, ForeignKey("slack_installations.team_id", ondelete="CASCADE"), nullable=True, index=True)
     group_size_at_creation = Column(Integer, nullable=False)
     approval_threshold = Column(Integer, nullable=False)
     approval_count = Column(Integer, default=0, nullable=False)
@@ -163,5 +165,26 @@ class ConfigChangeLog(Base):
         return (
             f"<ConfigChangeLog(id={self.id}, channel={self.channel_id}, "
             f"setting={self.setting_name}, {self.old_value}→{self.new_value}, by={self.changed_by_name})>"
+        )
+
+
+class ZohoInstallation(Base):
+    """Store Zoho OAuth credentials per Slack team."""
+    __tablename__ = "zoho_installations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(String(50), ForeignKey("slack_installations.team_id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    zoho_org_id = Column(String(100), nullable=True)  # Zoho organization ID
+    zoho_domain = Column(String(50), nullable=False)  # e.g., 'com', 'in', 'eu'
+    access_token = Column(Text, nullable=False)  # Encrypted
+    refresh_token = Column(Text, nullable=False)  # Encrypted
+    token_expires_at = Column(DateTime, nullable=True)
+    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    installed_by = Column(String(100), nullable=True)  # User who connected
+
+    def __repr__(self) -> str:
+        return (
+            f"<ZohoInstallation(id={self.id}, team_id={self.team_id}, "
+            f"zoho_org_id={self.zoho_org_id}, domain={self.zoho_domain})>"
         )
 

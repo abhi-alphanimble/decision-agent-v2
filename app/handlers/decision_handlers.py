@@ -14,9 +14,10 @@ from ..utils.display import format_vote_summary, display_vote_list
 from ..models import Decision # Import Decision model for type hinting
 from ..utils import truncate_text # NEW: Import the utility function
 from ..ai.ai_client import ai_client # Import AI client
-from ..integrations.zoho_sync import sync_decision_to_zoho, sync_vote_to_zoho, is_zoho_enabled
+from ..integrations.zoho_sync import sync_decision_to_zoho, sync_vote_to_zoho
 
 from ..config import get_context_logger
+from ..config.config import config  # Import config for APP_BASE_URL
 logger = get_context_logger(__name__)
 
 # Default values used when channel config or Slack API is unavailable
@@ -108,17 +109,17 @@ def handle_propose_command(
             group_size = DEFAULT_GROUP_SIZE
 
         # 2. Get channel config (no longer passes group_size to it)
-        config = crud.get_channel_config(db, channel_id)
+        channel_config = crud.get_channel_config(db, channel_id)
         
         # 3. Calculate threshold dynamically using the real group_size from Slack
         # Threshold = ceil(group_size * percentage / 100)
-        approval_threshold = math.ceil(group_size * (config.approval_percentage / 100.0))
+        approval_threshold = math.ceil(group_size * (channel_config.approval_percentage / 100.0))
         
         # Ensure at least 1 vote needed
         if approval_threshold < 1:
             approval_threshold = 1
             
-        logger.info(f"📊 New Decision Params: Size={group_size}, %={config.approval_percentage}, Threshold={approval_threshold}")
+        logger.info(f"📊 New Decision Params: Size={group_size}, %={channel_config.approval_percentage}, Threshold={approval_threshold}")
 
         decision = crud.create_decision(
             db=db,
@@ -127,33 +128,60 @@ def handle_propose_command(
             created_by=user_id,
             created_by_name=user_name,
             group_size_at_creation=group_size,
-            approval_threshold=approval_threshold
+            approval_threshold=approval_threshold,
+            team_id=team_id,
         )
         
         logger.info(f"✅ Created decision #{decision.id} by {user_name}: '{proposal_text[:50]}...'")
         
-        # Sync to Zoho CRM
-        if is_zoho_enabled():
+        # Sync to Zoho CRM (multi-tenant)
+        zoho_synced = False
+        try:
+            # Get channel name from Slack
+            channel_name = ""
             try:
-                # Get channel name from Slack
-                channel_name = ""
-                try:
-                    if ws_client:
-                        channel_info = ws_client.get_channel_info(channel_id)
-                    else:
-                        channel_info = slack_client.get_channel_info(channel_id)
-                    channel_name = channel_info.get("name", "")
-                except Exception as e:
-                    logger.debug(f"Could not fetch channel name: {e}")
-                
-                sync_decision_to_zoho(decision, channel_name)
-                logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM")
+                if ws_client:
+                    channel_info = ws_client.get_channel_info(channel_id)
+                else:
+                    channel_info = slack_client.get_channel_info(channel_id)
+                channel_name = channel_info.get("name", "")
             except Exception as e:
-                logger.error(f"❌ Failed to sync to Zoho: {e}", exc_info=True)
-                # Continue execution - don't fail the main operation
+                logger.debug(f"Could not fetch channel name: {e}")
+            
+            # Pass team_id and db for multi-tenant sync
+            zoho_synced = sync_decision_to_zoho(decision, team_id, db, channel_name)
+            if zoho_synced:
+                logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM for team {team_id}")
+            else:
+                logger.info(f"ℹ️ Zoho sync skipped for decision #{decision.id} - team {team_id} has no Zoho connection")
+        except Exception as e:
+            logger.error(f"❌ Failed to sync to Zoho: {e}", exc_info=True)
+            zoho_synced = False
+            # Continue execution - don't fail the main operation
         
         # Format success message
         response_text = format_proposal_success_message(decision)
+        
+        # Auto-prompt: Show dashboard URL if Zoho not connected (first few decisions)
+        logger.info(f"🔍 Auto-prompt check: zoho_synced={zoho_synced}, decision.id={decision.id}")
+        if not zoho_synced and decision.id <= 50:  # Show for first 50 decisions during setup
+            from ..models import ZohoInstallation
+            zoho_installation = db.query(ZohoInstallation).filter(
+                ZohoInstallation.team_id == team_id
+            ).first()
+            
+            logger.info(f"🔍 Zoho installation check: zoho_installation={zoho_installation}, team_id={team_id}")
+            
+            if not zoho_installation:
+                # Team doesn't have Zoho connected - show dashboard URL
+                dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
+                logger.info(f"✅ Adding dashboard URL to response: {dashboard_url}")
+                response_text += f"\n\n💡 *Want to sync decisions to Zoho CRM?*\n"
+                response_text += f"Visit your integrations dashboard:\n{dashboard_url}"
+            else:
+                logger.info(f"⏭️ Zoho already connected, skipping auto-prompt")
+        else:
+            logger.info(f"⏭️ Auto-prompt skipped: zoho_synced={zoho_synced}, decision_id={decision.id}")
         
         # Send to channel using workspace-specific client
         try:
@@ -256,6 +284,7 @@ def handle_add_command(
             group_size_at_creation=group_size,
             approval_threshold=approval_threshold,
             status="approved",
+            team_id=team_id,
         )
 
         # Mark approval_count to threshold so display is consistent
@@ -380,25 +409,25 @@ def handle_approve_command(
 
     logger.info(f"✅ Vote recorded: User {user_id} approved #{decision_id}")
 
-    # Sync vote to Zoho CRM
-    if is_zoho_enabled():
+    # Sync vote to Zoho CRM (multi-tenant)
+    try:
+        # Get channel name from Slack  
+        channel_name = ""
         try:
-            # Get channel name from Slack
-            channel_name = ""
-            try:
-                if ws_client:
-                    channel_info = ws_client.get_channel_info(channel_id)
-                else:
-                    channel_info = slack_client.get_channel_info(channel_id)
-                channel_name = channel_info.get("name", "")
-            except Exception as e:
-                logger.debug(f"Could not fetch channel name: {e}")
-            
-            sync_vote_to_zoho(updated_decision, channel_name)
-            logger.info(f"✅ Synced vote for decision #{decision_id} to Zoho CRM")
+            if ws_client:
+                channel_info = ws_client.get_channel_info(channel_id)
+            else:
+                channel_info = slack_client.get_channel_info(channel_id)
+            channel_name = channel_info.get("name", "")
         except Exception as e:
-            logger.error(f"❌ Failed to sync vote to Zoho: {e}", exc_info=True)
-            # Continue execution - don't fail the main operation
+            logger.debug(f"Could not fetch channel name: {e}")
+        
+        # Pass team_id and db for multi-tenant sync
+        sync_vote_to_zoho(updated_decision, team_id, db, channel_name)
+        logger.info(f"✅ Synced vote for decision #{decision_id} to Zoho CRM for team {team_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to sync vote to Zoho: {e}", exc_info=True)
+        # Continue execution - don't fail the main operation
 
     # 6. Format confirmation message
     confirmation = format_vote_confirmation(updated_decision, "approve", user_id)

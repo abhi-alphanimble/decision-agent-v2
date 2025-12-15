@@ -515,3 +515,290 @@ SUPPORT_PAGE_HTML = """
 </body>
 </html>
 """
+
+
+ZOHO_SUCCESS_PAGE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoho Connected - Decision Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 48px;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .emoji {
+            font-size: 64px;
+            margin-bottom: 24px;
+        }
+        
+        h1 {
+            color: #1a1a2e;
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+        
+        .team-name {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: left;
+            margin-bottom: 24px;
+        }
+        
+        .info-box h3 {
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        
+        .info-item {
+            background: #e9ecef;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+        
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .info-item strong {
+            color: #333;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+        }
+        
+        .footer {
+            margin-top: 24px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="emoji">🎉</div>
+        <h1>Zoho CRM Connected!</h1>
+        <p>
+            Successfully connected Zoho CRM for 
+            <span class="team-name">{team_name}</span>
+        </p>
+        
+        <div class="info-box">
+            <h3>Connection Details:</h3>
+            <div class="info-item"><strong>Zoho Org ID:</strong> {zoho_org_id}</div>
+            <div class="info-item"><strong>Data Center:</strong> {zoho_domain}</div>
+        </div>
+        
+        <p>
+            Your decisions will now automatically sync to your Zoho CRM account.
+            All data is stored securely with end-to-end encryption.
+        </p>
+        
+        <a href="/" class="btn">Back to Dashboard</a>
+        
+        <p class="footer">
+            You can disconnect Zoho CRM anytime using the /decision config command
+        </p>
+    </div>
+</body>
+</html>
+"""
+
+
+ZOHO_ERROR_PAGE_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoho Connection Error - Decision Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 48px;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .emoji {
+            font-size: 64px;
+            margin-bottom: 24px;
+        }
+        
+        h1 {
+            color: #dc3545;
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+        
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        
+        .error-box {
+            background: #fff5f5;
+            border-left: 4px solid #dc3545;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: left;
+            margin-bottom: 24px;
+        }
+        
+        .error-box h3 {
+            color: #dc3545;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .error-box code {
+            background: #ffe5e5;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #721c24;
+            display: block;
+            margin-top: 8px;
+            word-break: break-all;
+        }
+        
+        .error-description {
+            color: #555;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 12px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            box-shadow: 0 8px 24px rgba(108, 117, 125, 0.4);
+        }
+        
+        .footer {
+            margin-top: 24px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="emoji">❌</div>
+        <h1>Connection Failed</h1>
+        <p>
+            We couldn't connect your Zoho CRM account.
+            Please review the error below and try again.
+        </p>
+        
+        <div class="error-box">
+            <h3>Error Details:</h3>
+            <p class="error-description">{error_description}</p>
+            <code>{error}</code>
+        </div>
+        
+        <div>
+            <a href="/" class="btn">Try Again</a>
+            <a href="/support" class="btn btn-secondary">Get Support</a>
+        </div>
+        
+        <p class="footer">
+            If this problem persists, please contact support@example.com
+        </p>
+    </div>
+</body>
+</html>
+"""

@@ -14,7 +14,7 @@ from ..models import Decision, ChannelConfig
 from ..slack import slack_client
 from ..utils import get_utc_now
 from ..database.crud import update_decision_status, close_decision_as_unreachable, get_channel_config
-from ..integrations.zoho_sync import sync_vote_to_zoho, is_zoho_enabled
+from ..integrations.zoho_sync import sync_vote_to_zoho
 from database.base import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -95,14 +95,20 @@ def check_stale_decisions():
                     f"(👍 {decision.approval_count} vs 👎 {decision.rejection_count})"
                 )
                 
-                # Sync to Zoho CRM
-                if is_zoho_enabled():
-                    try:
-                        channel_name = slack_client.get_channel_info(decision.channel_id).get("name", "")
-                        sync_vote_to_zoho(decision, channel_name)
-                        logger.info(f"✅ Synced auto-closed decision to Zoho CRM")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to sync auto-closed decision to Zoho: {e}", exc_info=True)
+                # Sync to Zoho CRM (multi-tenant)
+                try:
+                    channel_name = slack_client.get_channel_info(decision.channel_id).get("name", "")
+                    # Pass team_id and db for multi-tenant sync
+                    # Note: decision.team_id should exist in your Decision model
+                    # If not, you'll need to get it from channel_id lookup
+                    team_id = getattr(decision, 'team_id', None)
+                    if team_id:
+                        sync_vote_to_zoho(decision, team_id, db, channel_name)
+                        logger.info(f"✅ Synced auto-closed decision to Zoho CRM for team {team_id}")
+                    else:
+                        logger.debug("No team_id found for decision, skipping Zoho sync")
+                except Exception as e:
+                    logger.error(f"❌ Failed to sync auto-closed decision to Zoho: {e}", exc_info=True)
                 
                 # Send Slack notification
                 send_auto_close_notification(decision)

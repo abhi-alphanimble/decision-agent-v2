@@ -37,6 +37,12 @@ class Config:
     # AI - Optional
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
     
+    # Zoho OAuth - Optional (for multi-tenant CRM integration)
+    ZOHO_CLIENT_ID = os.getenv('ZOHO_CLIENT_ID', '')
+    ZOHO_CLIENT_SECRET = os.getenv('ZOHO_CLIENT_SECRET', '')
+    ZOHO_ACCOUNTS_URL = os.getenv('ZOHO_ACCOUNTS_URL', 'https://accounts.zoho.com')
+    ZOHO_API_DOMAIN = os.getenv('ZOHO_API_DOMAIN', 'https://www.zohoapis.com')
+    
     # Auto-close settings
     DECISION_TIMEOUT_HOURS = int(os.getenv('DECISION_TIMEOUT_HOURS', '48'))
     

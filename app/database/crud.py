@@ -35,6 +35,7 @@ def create_decision(
     group_size_at_creation: int = 1,
     approval_threshold: int = 1,
     status: str = "pending",
+    team_id: Optional[str] = None,
 ) -> Decision:
     """
     Create a new decision record. Now uses dynamic group_size and threshold.
@@ -78,6 +79,7 @@ def create_decision(
         rejection_count=0,
         created_at=now,
         closed_at=closed_at,
+        team_id=team_id,
     )
 
     try:

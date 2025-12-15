@@ -1,20 +1,18 @@
 """
 Zoho CRM sync utilities for Decision Agent.
-Handles syncing decisions and votes to Zoho CRM.
+Handles syncing decisions and votes to Zoho CRM with multi-tenant support.
+
+Each team's data is synced to their own Zoho CRM account.
 """
 import logging
-import os
 from datetime import datetime
 from typing import Optional
-from app.models import Decision, Vote
-from .zoho_crm import zoho_client
+from sqlalchemy.orm import Session
+
+from app.models import Decision
+from .zoho_crm import ZohoCRMClient
 
 logger = logging.getLogger(__name__)
-
-
-def is_zoho_enabled() -> bool:
-    """Check if Zoho integration is enabled"""
-    return os.getenv("ZOHO_ENABLED", "false").lower() == "true"
 
 
 def format_datetime(dt: Optional[datetime]) -> Optional[str]:
@@ -39,6 +37,13 @@ def map_decision_to_zoho(decision: Decision, channel_name: Optional[str] = None)
     - Total_Vote: Total vote count
     - Status: Decision status (Pending, Approved, Rejected, Expired)
     - Propose_Time: When the decision was proposed/created
+    
+    Args:
+        decision: Decision instance
+        channel_name: Optional Slack channel name
+        
+    Returns:
+        Dictionary with Zoho CRM fields
     """
     return {
         "Name": f"Decision #{decision.id}: {decision.text[:50]}",
@@ -65,18 +70,37 @@ def map_status(status: str) -> str:
 
 
 def sync_decision_to_zoho(
-    decision: Decision, channel_name: Optional[str] = None
+    decision: Decision,
+    team_id: str,
+    db: Session,
+    channel_name: Optional[str] = None
 ) -> bool:
     """
-    Sync a decision to Zoho CRM.
+    Sync a decision to Zoho CRM for a specific team.
     Creates a new record if it doesn't exist, updates if it does.
-    Returns True if successful, False otherwise.
+    
+    Args:
+        decision: Decision instance to sync
+        team_id: Slack team ID
+        db: Database session
+        channel_name: Optional Slack channel name
+        
+    Returns:
+        True if successful or team has no Zoho connection, False if sync failed
     """
-    if not is_zoho_enabled():
-        logger.debug("Zoho integration is disabled")
+    if not team_id:
+        logger.warning("No team_id provided for Zoho sync - skipping")
         return True
     
     try:
+        # Create Zoho client for this team
+        try:
+            zoho_client = ZohoCRMClient(team_id, db)
+        except ValueError as e:
+            # Team has no Zoho connection - this is OK, just skip sync
+            logger.debug(f"Team {team_id} has no Zoho connection - skipping sync: {e}")
+            return False  # Return False so auto-prompt can show dashboard URL
+        
         zoho_data = map_decision_to_zoho(decision, channel_name)
         
         # Check if record exists in Zoho by searching for Decision_ID
@@ -87,39 +111,81 @@ def sync_decision_to_zoho(
             zoho_record_id = existing.get("id")
             result = zoho_client.update_decision(str(zoho_record_id), zoho_data)
             if result:
-                logger.info(f"✅ Updated decision #{decision.id} in Zoho CRM")
+                logger.info(
+                    f"✅ Updated decision #{decision.id} in Zoho CRM for team {team_id}"
+                )
                 return True
         else:
             # Create new record
             result = zoho_client.create_decision(zoho_data)
             if result:
-                logger.info(f"✅ Created decision #{decision.id} in Zoho CRM")
+                logger.info(
+                    f"✅ Created decision #{decision.id} in Zoho CRM for team {team_id}"
+                )
                 return True
         
-        logger.error(f"❌ Failed to sync decision #{decision.id} to Zoho CRM")
+        logger.error(
+            f"❌ Failed to sync decision #{decision.id} to Zoho CRM for team {team_id}"
+        )
         return False
+        
     except Exception as e:
-        logger.error(f"❌ Error syncing decision to Zoho: {e}", exc_info=True)
+        logger.error(
+            f"❌ Error syncing decision #{decision.id} to Zoho for team {team_id}: {e}",
+            exc_info=True
+        )
         return False
 
 
-def sync_vote_to_zoho(decision: Decision, channel_name: Optional[str] = None) -> bool:
+def sync_vote_to_zoho(
+    decision: Decision,
+    team_id: str,
+    db: Session,
+    channel_name: Optional[str] = None
+) -> bool:
     """
-    Sync vote counts to Zoho CRM (updates existing decision record).
+    Sync vote counts to Zoho CRM for a specific team.
+    Updates existing decision record with new vote counts.
     Called after a vote is cast or decision status changes.
-    Returns True if successful, False otherwise.
+    
+    Args:
+        decision: Decision instance with updated vote counts
+        team_id: Slack team ID
+        db: Database session
+        channel_name: Optional Slack channel name
+        
+    Returns:
+        True if successful or team has no Zoho connection, False if sync failed
     """
-    if not is_zoho_enabled():
-        logger.debug("Zoho integration is disabled")
+    if not team_id:
+        logger.warning("No team_id provided for Zoho vote sync - skipping")
         return True
     
     try:
+        # Create Zoho client for this team
+        try:
+            zoho_client = ZohoCRMClient(team_id, db)
+        except ValueError as e:
+            # Team has no Zoho connection - this is OK, just skip sync
+            logger.debug(f"Team {team_id} has no Zoho connection - skipping vote sync: {e}")
+            return False  # Return False so caller knows sync didn't happen
+        
         zoho_data = map_decision_to_zoho(decision, channel_name)
         
         # Find the Zoho record by Decision_ID
         existing = zoho_client.search_decision_by_id(decision.id)
         if not existing:
-            logger.error(f"❌ Decision #{decision.id} not found in Zoho CRM")
+            logger.warning(
+                f"Decision #{decision.id} not found in Zoho CRM for team {team_id} - "
+                "may need to create it first"
+            )
+            # Try to create it
+            result = zoho_client.create_decision(zoho_data)
+            if result:
+                logger.info(
+                    f"✅ Created decision #{decision.id} in Zoho CRM for team {team_id}"
+                )
+                return True
             return False
         
         # Update the record with new vote counts (use Zoho's record ID)
@@ -127,13 +193,23 @@ def sync_vote_to_zoho(decision: Decision, channel_name: Optional[str] = None) ->
         result = zoho_client.update_decision(str(zoho_record_id), zoho_data)
         
         if result:
-            logger.info(f"✅ Updated vote counts for decision #{decision.id} in Zoho CRM")
+            logger.info(
+                f"✅ Updated vote counts for decision #{decision.id} in Zoho CRM "
+                f"for team {team_id}"
+            )
             return True
         else:
-            logger.error(f"❌ Failed to update vote counts for decision #{decision.id} in Zoho CRM")
+            logger.error(
+                f"❌ Failed to update vote counts for decision #{decision.id} "
+                f"in Zoho CRM for team {team_id}"
+            )
             return False
+            
     except Exception as e:
-        logger.error(f"❌ Error updating votes in Zoho: {e}", exc_info=True)
+        logger.error(
+            f"❌ Error updating votes in Zoho for team {team_id}: {e}",
+            exc_info=True
+        )
         return False
 
 
@@ -141,6 +217,10 @@ def handle_zoho_sync_error(error: Exception, context: str = "") -> None:
     """
     Log and handle Zoho sync errors gracefully.
     The main operation should continue even if sync fails.
+    
+    Args:
+        error: The exception that occurred
+        context: Additional context about where the error occurred
     """
     logger.error(
         f"❌ Zoho sync error{' in ' + context if context else ''}: {str(error)}",
