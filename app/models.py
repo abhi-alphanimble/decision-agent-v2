@@ -35,6 +35,7 @@ class Decision(Base):
     rejection_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     closed_at = Column(DateTime, nullable=True)
+    zoho_synced = Column(Boolean, default=False, nullable=False)  # Track if synced to Zoho CRM
 
     votes = relationship("Vote", back_populates="decision", cascade="all, delete-orphan")
 

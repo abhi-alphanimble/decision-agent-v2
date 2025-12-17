@@ -2,20 +2,20 @@
 Handlers for member-related Slack events
 """
 from sqlalchemy.orm import Session
-import logging
 from typing import Dict, Any
 
 from ..database import crud
-from ..slack import slack_client
+from ..config.logging import get_context_logger
 
-logger = logging.getLogger(__name__)
+logger = get_context_logger(__name__)
 
 
 def handle_member_joined_channel(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> None:
     """
     Handle member_joined_channel event.
@@ -26,22 +26,28 @@ def handle_member_joined_channel(
         user_name: Display name of the member
         channel_id: Channel ID where member joined
         db: Database session
+        team_id: Slack team/workspace ID for multi-workspace support
     """
     logger.info(f"👋 Member {user_name} ({user_id}) joined channel {channel_id}")
     
+    # Get workspace-specific Slack client
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
+    
+    if not ws_client:
+        logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot send welcome message to {user_name}")
+        return
+    
     try:
-        # Note: group_size is no longer tracked in ChannelConfig
-        # It will be fetched dynamically from Slack when decisions are proposed
-
         # Get pending decisions for this channel
         pending_decisions = crud.get_pending_decisions(db, channel_id=channel_id)
         
         # Format welcome message
         welcome_message = format_welcome_message(user_name, pending_decisions)
         
-        # Send ephemeral message to the new member
+        # Send ephemeral message to the new member using workspace-specific client
         try:
-            slack_client.send_ephemeral_message(
+            ws_client.send_ephemeral_message(
                 channel=channel_id,
                 user=user_id,
                 text=welcome_message
@@ -117,7 +123,8 @@ def handle_member_left_channel(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> None:
     """
     Handle member_left_channel event.
@@ -128,19 +135,25 @@ def handle_member_left_channel(
         user_name: Display name of the member
         channel_id: Channel ID where member left
         db: Database session
+        team_id: Slack team/workspace ID for multi-workspace support
     """
     logger.info(f"👋 Member {user_name} ({user_id}) left channel {channel_id}")
     
+    # Get workspace-specific Slack client
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
+    
+    if not ws_client:
+        logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot process member leave for {user_name}")
+        return
+    
     try:
-        # Get current channel member count from Slack
+        # Get current channel member count from Slack using workspace-specific client
         try:
-            current_member_count = slack_client.get_channel_members_count(channel_id)
+            current_member_count = ws_client.get_channel_members_count(channel_id)
             logger.info(f"📊 Current channel human member count: {current_member_count}")
-            # Note: group_size is no longer stored in ChannelConfig
-            # It will be fetched dynamically when decisions are proposed
         except Exception as e:
-            logger.error(f"❌ Error getting channel members count: {e}")
-            # Can't proceed without member count
+            logger.warning(f"⚠️ Error getting channel members count: {e} - cannot check for unreachable decisions")
             return
         
         # Get all pending decisions for this channel
@@ -176,11 +189,11 @@ def handle_member_left_channel(
             except Exception as e:
                 logger.error(f"❌ Error closing decision #{decision.id}: {e}")
         
-        # Send notification to channel about closed decisions
+        # Send notification to channel about closed decisions using workspace-specific client
         if closed_decisions:
             notification = format_unreachable_notification(closed_decisions, user_name, current_member_count)
             try:
-                slack_client.send_message(
+                ws_client.send_message(
                     channel=channel_id,
                     text=notification
                 )

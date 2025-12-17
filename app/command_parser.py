@@ -31,6 +31,7 @@ class DecisionAction(str, Enum):
     SUMMARIZE = "summarize"
     SUGGEST = "suggest"
     CONFIG = "config"
+    SYNC_ZOHO = "sync-zoho"
 
 
 VALID_CONFIG_SETTINGS = {"approval_percentage"}
@@ -57,6 +58,11 @@ ACTION_ALIASES: Dict[str, DecisionAction] = {
     # Config variations
     "settings": DecisionAction.CONFIG,
     "configure": DecisionAction.CONFIG,
+    # Sync Zoho variations
+    "synczoho": DecisionAction.SYNC_ZOHO,
+    "sync_zoho": DecisionAction.SYNC_ZOHO,
+    "zoho-sync": DecisionAction.SYNC_ZOHO,
+    "zohosync": DecisionAction.SYNC_ZOHO,
 }
 
 
@@ -337,6 +343,10 @@ def parse_message(text: str) -> ParsedCommand:
                 error_message='Unknown config subcommand. Use: config show OR config set <setting> <value>'
             )
     
+    elif action == DecisionAction.SYNC_ZOHO:
+        # No arguments needed - syncs all historical decisions for this team
+        pass
+    
     return ParsedCommand(
         command_type=CommandType.DECISION,
         action=action,
@@ -380,7 +390,11 @@ Welcome! I help teams make decisions faster and more democratically.
   - Available settings: `approval_percentage`
   - Example: `/decision config set approval_percentage 70`
 
-*💡 Pro Tips*
+*� Zoho CRM Integration*
+• `/decision sync-zoho` - Sync all historical decisions to Zoho CRM
+  _Use this to backfill decisions that were made before connecting Zoho_
+
+*�💡 Pro Tips*
 • You can't change your vote once submitted.
 • Use `list` to find the ID of a decision.
 

@@ -1,8 +1,16 @@
-"""Initial schema - all tables
+"""Initial schema - all tables (consolidated)
 
 Revision ID: 001_initial
 Revises: 
-Create Date: 2025-12-10
+Create Date: 2025-12-17
+
+This migration includes all schema changes consolidated into a single file:
+- decisions table with team_id and zoho_synced columns
+- votes table
+- slack_installations table
+- channel_configs table (without auto_close_hours, group_size is nullable)
+- config_change_logs table
+- zoho_installations table
 
 """
 from typing import Sequence, Union
@@ -21,7 +29,18 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create all tables."""
     
-    # decisions table
+    # slack_installations table (created first as it's referenced by others)
+    op.create_table('slack_installations',
+        sa.Column('team_id', sa.String(), nullable=False),
+        sa.Column('team_name', sa.String(), nullable=True),
+        sa.Column('access_token', sa.String(), nullable=False),
+        sa.Column('bot_user_id', sa.String(), nullable=False),
+        sa.Column('installed_at', sa.DateTime(), nullable=False),
+        sa.PrimaryKeyConstraint('team_id')
+    )
+    op.create_index(op.f('ix_slack_installations_team_id'), 'slack_installations', ['team_id'], unique=False)
+    
+    # decisions table (with team_id and zoho_synced columns)
     op.create_table('decisions',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('text', sa.String(), nullable=False),
@@ -35,18 +54,22 @@ def upgrade() -> None:
         sa.Column('rejection_count', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('closed_at', sa.DateTime(), nullable=True),
+        sa.Column('team_id', sa.String(), nullable=True),
+        sa.Column('zoho_synced', sa.Boolean(), nullable=False, server_default='false'),
         sa.CheckConstraint("status IN ('pending', 'approved', 'rejected', 'expired')", name='check_valid_status'),
         sa.CheckConstraint('approval_count >= 0', name='check_approval_count_positive'),
         sa.CheckConstraint('approval_threshold > 0', name='check_threshold_positive'),
         sa.CheckConstraint('group_size_at_creation > 0', name='check_group_size_positive'),
         sa.CheckConstraint('rejection_count >= 0', name='check_rejection_count_positive'),
+        sa.ForeignKeyConstraint(['team_id'], ['slack_installations.team_id'], name='fk_decisions_team_id', ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_decisions_channel_id'), 'decisions', ['channel_id'], unique=False)
     op.create_index(op.f('ix_decisions_id'), 'decisions', ['id'], unique=False)
     op.create_index(op.f('ix_decisions_proposer_phone'), 'decisions', ['proposer_phone'], unique=False)
+    op.create_index(op.f('ix_decisions_team_id'), 'decisions', ['team_id'], unique=False)
     
-    # votes table (without is_anonymous column)
+    # votes table
     op.create_table('votes',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('decision_id', sa.Integer(), nullable=False),
@@ -63,33 +86,19 @@ def upgrade() -> None:
     op.create_index(op.f('ix_votes_id'), 'votes', ['id'], unique=False)
     op.create_index(op.f('ix_votes_voter_phone'), 'votes', ['voter_phone'], unique=False)
     
-    # slack_installations table
-    op.create_table('slack_installations',
-        sa.Column('team_id', sa.String(), nullable=False),
-        sa.Column('team_name', sa.String(), nullable=True),
-        sa.Column('access_token', sa.String(), nullable=False),
-        sa.Column('bot_user_id', sa.String(), nullable=False),
-        sa.Column('installed_at', sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint('team_id')
-    )
-    op.create_index(op.f('ix_slack_installations_team_id'), 'slack_installations', ['team_id'], unique=False)
-    
-    # channel_configs table
+    # channel_configs table (group_size nullable, no auto_close_hours)
     op.create_table('channel_configs',
         sa.Column('channel_id', sa.String(), nullable=False),
         sa.Column('approval_percentage', sa.Integer(), nullable=False),
-        sa.Column('auto_close_hours', sa.Integer(), nullable=False),
-        sa.Column('group_size', sa.Integer(), nullable=False),
+        sa.Column('group_size', sa.Integer(), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.Column('updated_by', sa.String(), nullable=True),
         sa.CheckConstraint('approval_percentage > 0 AND approval_percentage <= 100', name='check_valid_percentage'),
-        sa.CheckConstraint('auto_close_hours > 0', name='check_valid_hours'),
-        sa.CheckConstraint('group_size > 0', name='check_valid_group_size'),
         sa.PrimaryKeyConstraint('channel_id')
     )
     op.create_index(op.f('ix_channel_configs_channel_id'), 'channel_configs', ['channel_id'], unique=False)
     
-    # config_change_logs table
+    # config_change_logs table (only approval_percentage allowed)
     op.create_table('config_change_logs',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('channel_id', sa.String(), nullable=False),
@@ -99,15 +108,38 @@ def upgrade() -> None:
         sa.Column('changed_by', sa.String(), nullable=False),
         sa.Column('changed_by_name', sa.String(), nullable=False),
         sa.Column('changed_at', sa.DateTime(), nullable=False),
-        sa.CheckConstraint("setting_name IN ('approval_percentage', 'auto_close_hours', 'group_size')", name='check_valid_setting_name'),
+        sa.CheckConstraint("setting_name = 'approval_percentage'", name='check_valid_setting_name'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_config_change_logs_channel_id'), 'config_change_logs', ['channel_id'], unique=False)
     op.create_index(op.f('ix_config_change_logs_id'), 'config_change_logs', ['id'], unique=False)
+    
+    # zoho_installations table
+    op.create_table('zoho_installations',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('team_id', sa.String(50), nullable=False),
+        sa.Column('zoho_org_id', sa.String(100), nullable=True),
+        sa.Column('zoho_domain', sa.String(50), nullable=False),
+        sa.Column('access_token', sa.Text(), nullable=False),
+        sa.Column('refresh_token', sa.Text(), nullable=False),
+        sa.Column('token_expires_at', sa.DateTime(), nullable=True),
+        sa.Column('installed_at', sa.DateTime(), nullable=False),
+        sa.Column('installed_by', sa.String(100), nullable=True),
+        sa.ForeignKeyConstraint(['team_id'], ['slack_installations.team_id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('team_id', name='uq_zoho_installations_team_id')
+    )
+    op.create_index(op.f('ix_zoho_installations_id'), 'zoho_installations', ['id'], unique=False)
+    op.create_index(op.f('ix_zoho_installations_team_id'), 'zoho_installations', ['team_id'], unique=True)
 
 
 def downgrade() -> None:
     """Drop all tables."""
+    # Drop in reverse order of creation (respecting foreign key dependencies)
+    op.drop_index(op.f('ix_zoho_installations_team_id'), table_name='zoho_installations')
+    op.drop_index(op.f('ix_zoho_installations_id'), table_name='zoho_installations')
+    op.drop_table('zoho_installations')
+    
     op.drop_index(op.f('ix_config_change_logs_id'), table_name='config_change_logs')
     op.drop_index(op.f('ix_config_change_logs_channel_id'), table_name='config_change_logs')
     op.drop_table('config_change_logs')
@@ -115,15 +147,16 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_channel_configs_channel_id'), table_name='channel_configs')
     op.drop_table('channel_configs')
     
-    op.drop_index(op.f('ix_slack_installations_team_id'), table_name='slack_installations')
-    op.drop_table('slack_installations')
-    
     op.drop_index(op.f('ix_votes_voter_phone'), table_name='votes')
     op.drop_index(op.f('ix_votes_id'), table_name='votes')
     op.drop_index(op.f('ix_votes_decision_id'), table_name='votes')
     op.drop_table('votes')
     
+    op.drop_index(op.f('ix_decisions_team_id'), table_name='decisions')
     op.drop_index(op.f('ix_decisions_proposer_phone'), table_name='decisions')
     op.drop_index(op.f('ix_decisions_id'), table_name='decisions')
     op.drop_index(op.f('ix_decisions_channel_id'), table_name='decisions')
     op.drop_table('decisions')
+    
+    op.drop_index(op.f('ix_slack_installations_team_id'), table_name='slack_installations')
+    op.drop_table('slack_installations')

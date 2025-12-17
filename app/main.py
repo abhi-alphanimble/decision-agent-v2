@@ -25,7 +25,8 @@ from .handlers.decision_handlers import (
     handle_help_command,
     handle_summarize_command,
     handle_suggest_command,
-    handle_config_command
+    handle_config_command,
+    handle_sync_zoho_command
 )
 from .handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
 
@@ -281,9 +282,9 @@ def _handle_member_event_sync(event_type: str, user_id: str, user_name: str, cha
     """
     with get_db_session() as db:
         if event_type == "member_joined_channel":
-            handle_member_joined_channel(user_id, user_name, channel_id, db)
+            handle_member_joined_channel(user_id, user_name, channel_id, db, team_id)
         elif event_type == "member_left_channel":
-            handle_member_left_channel(user_id, user_name, channel_id, db)
+            handle_member_left_channel(user_id, user_name, channel_id, db, team_id)
 
 
 def _handle_decision_command_sync(
@@ -414,6 +415,16 @@ def _handle_decision_command_sync(
                 user_name=user_name,
                 channel_id=channel_id,
                 db=db
+            )
+
+        elif parsed.action == DecisionAction.SYNC_ZOHO:
+            response = handle_sync_zoho_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db,
+                team_id=team_id
             )
 
         else:

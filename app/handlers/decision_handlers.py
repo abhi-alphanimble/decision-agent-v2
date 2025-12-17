@@ -65,6 +65,16 @@ def handle_propose_command(
     from ..slack.client import get_client_for_team
     ws_client = get_client_for_team(team_id, db) if team_id else None
     
+    # Check if workspace is installed before proceeding
+    if not ws_client:
+        logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot process propose command")
+        return {
+            "text": "⚠️ *Decision Agent is not installed in this workspace.*\n\n"
+                   "Please ask a workspace admin to install the app first.\n\n"
+                   "💡 After installation, you can use `/decision propose \"Your proposal\"` to create decisions.",
+            "response_type": "ephemeral"
+        }
+    
     # Extract proposal text
     if not parsed.args or len(parsed.args) == 0:
         logger.warning("❌ No proposal text provided")
@@ -93,19 +103,15 @@ def handle_propose_command(
     
     # Create decision in database
     try:
-        # 1. Get real member count from Slack dynamically
+        # 1. Get real member count from Slack dynamically (ws_client is guaranteed to exist here)
         try:
-            if ws_client:
-                group_size = ws_client.get_channel_members_count(channel_id)
-            else:
-                # Fallback to global client (for backward compatibility)
-                group_size = slack_client.get_channel_members_count(channel_id)
+            group_size = ws_client.get_channel_members_count(channel_id)
             if not isinstance(group_size, int) or group_size <= 0:
                 logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
                 group_size = DEFAULT_GROUP_SIZE
             logger.info(f"📊 Fetched dynamic member count from Slack: {group_size} members in {channel_id}")
         except Exception as e:
-            logger.error(f"❌ Error fetching group size: {e}")
+            logger.warning(f"⚠️ Error fetching group size: {e} - using default")
             group_size = DEFAULT_GROUP_SIZE
 
         # 2. Get channel config (no longer passes group_size to it)
@@ -137,13 +143,10 @@ def handle_propose_command(
         # Sync to Zoho CRM (multi-tenant)
         zoho_synced = False
         try:
-            # Get channel name from Slack
+            # Get channel name from Slack (ws_client is guaranteed to exist)
             channel_name = ""
             try:
-                if ws_client:
-                    channel_info = ws_client.get_channel_info(channel_id)
-                else:
-                    channel_info = slack_client.get_channel_info(channel_id)
+                channel_info = ws_client.get_channel_info(channel_id)
                 channel_name = channel_info.get("name", "")
             except Exception as e:
                 logger.debug(f"Could not fetch channel name: {e}")
@@ -151,6 +154,9 @@ def handle_propose_command(
             # Pass team_id and db for multi-tenant sync
             zoho_synced = sync_decision_to_zoho(decision, team_id, db, channel_name)
             if zoho_synced:
+                # Mark decision as synced in database
+                decision.zoho_synced = True
+                db.commit()
                 logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM for team {team_id}")
             else:
                 logger.info(f"ℹ️ Zoho sync skipped for decision #{decision.id} - team {team_id} has no Zoho connection")
@@ -189,12 +195,9 @@ def handle_propose_command(
         else:
             logger.info(f"⏭️ Auto-prompt skipped: zoho_synced={zoho_synced}, decision_id={decision.id}")
         
-        # Send to channel using workspace-specific client
+        # Send to channel using workspace-specific client (ws_client is guaranteed to exist)
         try:
-            if ws_client:
-                ws_client.send_message(channel=channel_id, text=response_text)
-            else:
-                slack_client.send_message(channel=channel_id, text=response_text)
+            ws_client.send_message(channel=channel_id, text=response_text)
             logger.info(f"✅ Sent proposal #{decision.id} to channel {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error sending to Slack: {e}", exc_info=True)
@@ -235,6 +238,16 @@ def handle_add_command(
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
     ws_client = get_client_for_team(team_id, db) if team_id else None
+    
+    # Check if workspace is installed before proceeding
+    if not ws_client:
+        logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot process add command")
+        return {
+            "text": "⚠️ *Decision Agent is not installed in this workspace.*\n\n"
+                   "Please ask a workspace admin to install the app first.\n\n"
+                   "💡 After installation, you can use `/decision add \"Decision text\"` to add decisions.",
+            "response_type": "ephemeral"
+        }
 
     # Extract text (same validation as propose)
     if not parsed.args or len(parsed.args) == 0:
@@ -261,18 +274,15 @@ def handle_add_command(
         }
 
     try:
-        # Get group size and config dynamically
+        # Get group size and config dynamically (ws_client is guaranteed to exist)
         try:
-            if ws_client:
-                group_size = ws_client.get_channel_members_count(channel_id)
-            else:
-                group_size = slack_client.get_channel_members_count(channel_id)
+            group_size = ws_client.get_channel_members_count(channel_id)
             if not isinstance(group_size, int) or group_size <= 0:
                 logger.warning(f"⚠️ Invalid group size from Slack: {group_size}, defaulting to DEFAULT_GROUP_SIZE")
                 group_size = DEFAULT_GROUP_SIZE
             logger.info(f"📊 Fetched dynamic member count from Slack: {group_size} members in {channel_id}")
         except Exception as e:
-            logger.error(f"❌ Error fetching group size for add: {e}")
+            logger.warning(f"⚠️ Error fetching group size for add: {e} - using default")
             group_size = DEFAULT_GROUP_SIZE
 
         config = crud.get_channel_config(db, channel_id)
@@ -303,12 +313,9 @@ def handle_add_command(
 
         logger.info(f"✅ Added pre-approved decision #{decision.id} by {user_name}")
 
-        # Notify channel using workspace-specific client
+        # Notify channel using workspace-specific client (ws_client is guaranteed to exist)
         try:
-            if ws_client:
-                ws_client.send_message(channel=channel_id, text=format_decision_approved_message(decision, db))
-            else:
-                slack_client.send_message(channel=channel_id, text=format_decision_approved_message(decision, db))
+            ws_client.send_message(channel=channel_id, text=format_decision_approved_message(decision, db))
         except Exception as e:
             logger.error(f"❌ Error sending add notification to Slack: {e}")
 
@@ -347,6 +354,15 @@ def handle_approve_command(
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
     ws_client = get_client_for_team(team_id, db) if team_id else None
+    
+    # Check if workspace is installed before proceeding
+    if not ws_client:
+        logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot process approve command")
+        return {
+            "text": "⚠️ *Decision Agent is not installed in this workspace.*\n\n"
+                   "Please ask a workspace admin to install the app first.",
+            "response_type": "ephemeral"
+        }
 
     # 1. Extract decision_id
     if not parsed.args or len(parsed.args) == 0:
@@ -417,13 +433,10 @@ def handle_approve_command(
 
     # Sync vote to Zoho CRM (multi-tenant)
     try:
-        # Get channel name from Slack  
+        # Get channel name from Slack (ws_client is guaranteed to exist)
         channel_name = ""
         try:
-            if ws_client:
-                channel_info = ws_client.get_channel_info(channel_id)
-            else:
-                channel_info = slack_client.get_channel_info(channel_id)
+            channel_info = ws_client.get_channel_info(channel_id)
             channel_name = channel_info.get("name", "")
         except Exception as e:
             logger.debug(f"Could not fetch channel name: {e}")
@@ -442,13 +455,10 @@ def handle_approve_command(
     if updated_decision.status == "approved":
         logger.info(f"🎉 Decision #{decision_id} APPROVED!")
 
-        # Send channel notification using workspace-specific client
+        # Send channel notification using workspace-specific client (ws_client is guaranteed to exist)
         try:
             channel_message = format_decision_approved_message(updated_decision, db)
-            if ws_client:
-                ws_client.send_message(channel=channel_id, text=channel_message)
-            else:
-                slack_client.send_message(channel=channel_id, text=channel_message)
+            ws_client.send_message(channel=channel_id, text=channel_message)
             logger.info(f"✅ Sent approval notification to channel {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error sending approval notification: {e}")
@@ -481,6 +491,15 @@ def handle_reject_command(
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
     ws_client = get_client_for_team(team_id, db) if team_id else None
+    
+    # Check if workspace is installed before proceeding
+    if not ws_client:
+        logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot process reject command")
+        return {
+            "text": "⚠️ *Decision Agent is not installed in this workspace.*\n\n"
+                   "Please ask a workspace admin to install the app first.",
+            "response_type": "ephemeral"
+        }
     
     # 1. Extract decision_id
     if not parsed.args or len(parsed.args) == 0:
@@ -556,13 +575,10 @@ def handle_reject_command(
     if updated_decision.status == "rejected":
         logger.info(f"❌ Decision #{decision_id} REJECTED!")
         
-        # Send channel notification using workspace-specific client
+        # Send channel notification using workspace-specific client (ws_client is guaranteed to exist)
         try:
             channel_message = format_decision_rejected_message(updated_decision, db)
-            if ws_client:
-                ws_client.send_message(channel=channel_id, text=channel_message)
-            else:
-                slack_client.send_message(channel=channel_id, text=channel_message)
+            ws_client.send_message(channel=channel_id, text=channel_message)
             logger.info(f"✅ Sent rejection notification to channel {channel_id}")
         except Exception as e:
             logger.error(f"❌ Error sending rejection notification: {e}")
@@ -1436,6 +1452,160 @@ def handle_config_command(
             "text": f"❌ An error occurred: {str(e)}",
             "response_type": "ephemeral"
         }
+
+
+def handle_sync_zoho_command(
+    parsed: ParsedCommand,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    db: Session,
+    team_id: str = ""
+) -> Dict[str, Any]:
+    """
+    Handle sync-zoho command - sync all historical decisions for this team to Zoho CRM.
+    Command: /decision sync-zoho
+    
+    This allows users to backfill decisions that were created before the Zoho 
+    integration was connected.
+    
+    Args:
+        parsed: Parsed command data
+        user_id: Slack user ID
+        user_name: User's display name
+        channel_id: Slack channel ID
+        db: Database session
+        team_id: Slack team ID for multi-workspace support
+    """
+    logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
+    logger.info("Handling SYNC-ZOHO command", extra={"user_name": user_name, "team_id": team_id})
+    
+    # 1. Check if team_id is provided
+    if not team_id:
+        logger.warning("❌ No team_id provided for Zoho sync")
+        return {
+            "text": "❌ Unable to sync: Team ID not found. Please try again.",
+            "response_type": "ephemeral"
+        }
+    
+    # 2. Check if Zoho is connected for this team
+    from ..models import ZohoInstallation
+    zoho_installation = db.query(ZohoInstallation).filter(
+        ZohoInstallation.team_id == team_id
+    ).first()
+    
+    if not zoho_installation:
+        from ..config.config import config
+        dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
+        logger.warning(f"❌ Team {team_id} has no Zoho connection")
+        return {
+            "text": f"❌ Zoho CRM is not connected for this workspace.\n\n"
+                    f"Please connect Zoho CRM first:\n{dashboard_url}",
+            "response_type": "ephemeral"
+        }
+    
+    # 3. Fetch only UNSYNCED decisions for this team from the database
+    unsynced_decisions = db.query(Decision).filter(
+        Decision.team_id == team_id,
+        Decision.zoho_synced == False  # Only get unsynced decisions
+    ).order_by(Decision.created_at.asc()).all()
+    
+    # Also get count of already synced for informational purposes
+    already_synced_count = db.query(Decision).filter(
+        Decision.team_id == team_id,
+        Decision.zoho_synced == True
+    ).count()
+    
+    if not unsynced_decisions:
+        if already_synced_count > 0:
+            logger.info(f"All {already_synced_count} decisions already synced for team {team_id}")
+            return {
+                "text": f"✅ All decisions are already synced!\n\n"
+                        f"*{already_synced_count}* decision(s) are already in Zoho CRM.\n\n"
+                        f"_New decisions are automatically synced when created._",
+                "response_type": "ephemeral"
+            }
+        else:
+            logger.info(f"No decisions found for team {team_id}")
+            return {
+                "text": "ℹ️ No decisions found for this workspace. Nothing to sync.",
+                "response_type": "ephemeral"
+            }
+    
+    total_to_sync = len(unsynced_decisions)
+    logger.info(f"Found {total_to_sync} unsynced decisions to sync for team {team_id} ({already_synced_count} already synced)")
+    
+    # 4. Get workspace-specific Slack client for channel name lookup
+    from ..slack.client import get_client_for_team
+    ws_client = get_client_for_team(team_id, db) if team_id else None
+    
+    # 5. Sync each unsynced decision to Zoho CRM
+    synced_count = 0
+    failed_count = 0
+    failed_ids = []
+    
+    for decision in unsynced_decisions:
+        try:
+            # Get channel name for the decision  
+            channel_name = ""
+            try:
+                if ws_client and decision.channel_id:
+                    channel_info = ws_client.get_channel_info(decision.channel_id)
+                    channel_name = channel_info.get("name", "")
+            except Exception as e:
+                logger.debug(f"Could not fetch channel name for {decision.channel_id}: {e}")
+            
+            # Sync to Zoho
+            success = sync_decision_to_zoho(decision, team_id, db, channel_name)
+            
+            if success:
+                # Mark as synced in the database
+                decision.zoho_synced = True
+                db.commit()
+                synced_count += 1
+                logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM and marked as synced")
+            else:
+                failed_count += 1
+                failed_ids.append(decision.id)
+                logger.warning(f"❌ Failed to sync decision #{decision.id} to Zoho CRM")
+                
+        except Exception as e:
+            failed_count += 1
+            failed_ids.append(decision.id)
+            logger.error(f"❌ Error syncing decision #{decision.id}: {e}", exc_info=True)
+            db.rollback()  # Rollback in case of error
+    
+    # 6. Build response message
+    total_now_synced = already_synced_count + synced_count
+    
+    if failed_count == 0:
+        response_text = (
+            f"✅ *Zoho CRM Sync Complete!*\n\n"
+            f"• Successfully synced: *{synced_count}* decision(s)\n"
+            f"• Previously synced: *{already_synced_count}* decision(s)\n"
+            f"• Total in Zoho CRM: *{total_now_synced}* decision(s)\n\n"
+            f"All decisions are now available in your Zoho CRM Slack_Decisions module."
+        )
+    else:
+        failed_list = ", ".join([f"#{id}" for id in failed_ids[:10]])
+        if len(failed_ids) > 10:
+            failed_list += f" and {len(failed_ids) - 10} more"
+        
+        response_text = (
+            f"⚠️ *Zoho CRM Sync Completed with Errors*\n\n"
+            f"• Successfully synced: *{synced_count}* decision(s)\n"
+            f"• Failed to sync: *{failed_count}* decision(s)\n"
+            f"• Previously synced: *{already_synced_count}* decision(s)\n\n"
+            f"Failed IDs: {failed_list}\n\n"
+            f"_You can retry by running `/decision sync-zoho` again._"
+        )
+    
+    logger.info(f"Zoho sync complete: {synced_count} synced, {failed_count} failed for team {team_id}")
+    
+    return {
+        "text": response_text,
+        "response_type": "ephemeral"
+    }
 
 
 # --- FINAL HELP OVERRIDE (appended at EOF) ---
