@@ -32,7 +32,7 @@ def handle_member_joined_channel(
     
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     if not ws_client:
         logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot send welcome message to {user_name}")
@@ -141,7 +141,7 @@ def handle_member_left_channel(
     
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     if not ws_client:
         logger.warning(f"⚠️ Workspace {team_id} is not installed - cannot process member leave for {user_name}")

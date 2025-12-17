@@ -63,7 +63,7 @@ def handle_propose_command(
     
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     # Check if workspace is installed before proceeding
     if not ws_client:
@@ -237,7 +237,7 @@ def handle_add_command(
     
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     # Check if workspace is installed before proceeding
     if not ws_client:
@@ -353,7 +353,7 @@ def handle_approve_command(
     
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     # Check if workspace is installed before proceeding
     if not ws_client:
@@ -490,7 +490,7 @@ def handle_reject_command(
     
     # Get workspace-specific Slack client
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     # Check if workspace is installed before proceeding
     if not ws_client:
@@ -1359,7 +1359,7 @@ def handle_config_command(
     
     # Get workspace-specific client for API calls
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     # 1. If no args OR first arg is "show", show current config
     if not parsed.args or len(parsed.args) == 0 or (len(parsed.args) == 1 and parsed.args[0].lower() == "show"):
@@ -1537,7 +1537,7 @@ def handle_sync_zoho_command(
     
     # 4. Get workspace-specific Slack client for channel name lookup
     from ..slack.client import get_client_for_team
-    ws_client = get_client_for_team(team_id, db) if team_id else None
+    ws_client = get_client_for_team(team_id, db)
     
     # 5. Sync each unsynced decision to Zoho CRM
     synced_count = 0

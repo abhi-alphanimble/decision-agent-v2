@@ -312,9 +312,42 @@ def _handle_decision_command_sync(
         Response dict to send back to Slack
     """
     from .command_parser import ParsedCommand, DecisionAction
+    from .slack.client import get_client_for_team
     
     with get_db_session() as db:
         response = None
+        
+        # Get workspace-specific Slack client
+        # In test mode, this returns a mock; in production, returns None if no installation found
+        ws_client = get_client_for_team(team_id, db)
+        
+        # Check if workspace is installed
+        if not ws_client:
+            logger.warning(f"⚠️ Workspace {team_id} is not installed")
+            return {
+                "text": "⚠️ *DeciAgent is not installed in this workspace.*\n\n"
+                       "Please ask a workspace admin to install the app first.",
+                "response_type": "ephemeral"
+            }
+        
+        # Check if bot is a member of this channel
+        try:
+            is_member = ws_client.is_bot_member_of_channel(channel_id)
+            if not is_member:
+                logger.info(f"⚠️ Bot is not a member of channel {channel_id} in team {team_id}")
+                return {
+                    "text": "⚠️ *DeciAgent is not added to this channel yet.*\n\n"
+                           "Please add me to this channel first before using commands.\n\n"
+                           "*How to add DeciAgent:*\n"
+                           "• Type `/invite @DeciAgent` in this channel, or\n"
+                           "• Go to channel settings → Integrations → Add an app\n\n"
+                           "Once I'm added, you can use all `/decision` commands here! 🎉",
+                    "response_type": "ephemeral"
+                }
+        except Exception as e:
+            logger.error(f"Error checking bot channel membership: {e}", exc_info=True)
+            # If we can't determine membership, let the command proceed
+            # (it will fail with a clearer error if bot truly isn't in the channel)
         
         if parsed.action == DecisionAction.PROPOSE:
             response = handle_propose_command(
