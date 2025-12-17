@@ -32,6 +32,7 @@ class DecisionAction(str, Enum):
     SUGGEST = "suggest"
     CONFIG = "config"
     SYNC_ZOHO = "sync-zoho"
+    CONNECT_ZOHO = "connect-zoho"
 
 
 VALID_CONFIG_SETTINGS = {"approval_percentage"}
@@ -63,6 +64,11 @@ ACTION_ALIASES: Dict[str, DecisionAction] = {
     "sync_zoho": DecisionAction.SYNC_ZOHO,
     "zoho-sync": DecisionAction.SYNC_ZOHO,
     "zohosync": DecisionAction.SYNC_ZOHO,
+    # Connect Zoho variations
+    "connectzoho": DecisionAction.CONNECT_ZOHO,
+    "connect_zoho": DecisionAction.CONNECT_ZOHO,
+    "zoho-connect": DecisionAction.CONNECT_ZOHO,
+    "zohoconnect": DecisionAction.CONNECT_ZOHO,
 }
 
 
@@ -347,6 +353,10 @@ def parse_message(text: str) -> ParsedCommand:
         # No arguments needed - syncs all historical decisions for this team
         pass
     
+    elif action == DecisionAction.CONNECT_ZOHO:
+        # No arguments needed - just shows the dashboard URL
+        pass
+    
     return ParsedCommand(
         command_type=CommandType.DECISION,
         action=action,
@@ -390,11 +400,12 @@ Welcome! I help teams make decisions faster and more democratically.
   - Available settings: `approval_percentage`
   - Example: `/decision config set approval_percentage 70`
 
-*� Zoho CRM Integration*
+*📦 Zoho CRM Integration*
+• `/decision connect-zoho` - Get the Zoho CRM integration dashboard URL
 • `/decision sync-zoho` - Sync all historical decisions to Zoho CRM
   _Use this to backfill decisions that were made before connecting Zoho_
 
-*�💡 Pro Tips*
+*💡 Pro Tips*
 • You can't change your vote once submitted.
 • Use `list` to find the ID of a decision.
 

@@ -1609,6 +1609,76 @@ def handle_sync_zoho_command(
 
 
 # --- FINAL HELP OVERRIDE (appended at EOF) ---
+def handle_connect_zoho_command(
+    parsed: ParsedCommand,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    db: Session,
+    team_id: str = ""
+) -> Dict[str, Any]:
+    """
+    Handle connect-zoho command - show the Zoho CRM integration dashboard URL.
+    Command: /decision connect-zoho
+    
+    This allows users to access the Zoho integration dashboard URL at any time.
+    Shows different messages based on whether Zoho is already connected.
+    
+    Args:
+        parsed: Parsed command data
+        user_id: Slack user ID
+        user_name: User's display name
+        channel_id: Slack channel ID
+        db: Database session
+        team_id: Slack team ID for multi-workspace support
+        
+    Returns:
+        Response dict with the dashboard URL
+    """
+    logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
+    logger.info("Handling CONNECT_ZOHO command", extra={"user_name": user_name, "team_id": team_id})
+    
+    # 1. Validate team_id
+    if not team_id:
+        logger.warning("❌ No team_id provided for connect-zoho")
+        return {
+            "text": "❌ Unable to generate URL: Team ID not found. Please try again.",
+            "response_type": "ephemeral"
+        }
+    
+    # 2. Generate the dashboard URL
+    from ..config.config import config
+    dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
+    
+    # 3. Check if Zoho is already connected for this team
+    from ..models import ZohoInstallation
+    zoho_installation = db.query(ZohoInstallation).filter(
+        ZohoInstallation.team_id == team_id
+    ).first()
+    
+    if zoho_installation:
+        # Zoho is already connected
+        logger.info(f"✅ Zoho already connected for team {team_id}")
+        return {
+            "text": f"✅ *Zoho CRM is already connected!*\n\n"
+                    f"Your workspace is linked to Zoho CRM.\n\n"
+                    f"Using the link below, you can disconnect and connect again if needed:\n\n"
+                    f"{dashboard_url}",
+            "response_type": "ephemeral"
+        }
+    else:
+        # Zoho is not connected
+        logger.info(f"ℹ️ Zoho not connected for team {team_id}, showing connect URL")
+        return {
+            "text": f"🔗 *Zoho CRM Integration Dashboard*\n\n"
+                    f"Visit the link below to connect your Zoho CRM integration:\n\n"
+                    f"{dashboard_url}",
+            "response_type": "ephemeral"
+        }
+
+
+
+# --- FINAL HELP OVERRIDE (appended at EOF) ---
 def _help_command_final(parsed: Optional[ParsedCommand] = None, user_id: Optional[str] = None, user_name: Optional[str] = None, channel_id: Optional[str] = None, db: Optional[Session] = None) -> Dict[str, Any]:
     logger.info("📖 Handling HELP command (EOF final override)")
     help_text = """📚 *Decision Agent Help Guide*

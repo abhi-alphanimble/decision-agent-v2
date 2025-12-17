@@ -26,7 +26,8 @@ from .handlers.decision_handlers import (
     handle_summarize_command,
     handle_suggest_command,
     handle_config_command,
-    handle_sync_zoho_command
+    handle_sync_zoho_command,
+    handle_connect_zoho_command
 )
 from .handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
 
@@ -419,6 +420,16 @@ def _handle_decision_command_sync(
 
         elif parsed.action == DecisionAction.SYNC_ZOHO:
             response = handle_sync_zoho_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db,
+                team_id=team_id
+            )
+
+        elif parsed.action == DecisionAction.CONNECT_ZOHO:
+            response = handle_connect_zoho_command(
                 parsed=parsed,
                 user_id=user_id,
                 user_name=user_name,
