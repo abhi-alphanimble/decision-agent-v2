@@ -43,9 +43,6 @@ class Config:
     ZOHO_ACCOUNTS_URL = os.getenv('ZOHO_ACCOUNTS_URL', 'https://accounts.zoho.com')
     ZOHO_API_DOMAIN = os.getenv('ZOHO_API_DOMAIN', 'https://www.zohoapis.com')
     
-    # Auto-close settings
-    DECISION_TIMEOUT_HOURS = int(os.getenv('DECISION_TIMEOUT_HOURS', '48'))
-    
     # Server
     SERVER_HOST = os.getenv('SERVER_HOST', '0.0.0.0')
     SERVER_PORT = int(os.getenv('SERVER_PORT', '8000'))

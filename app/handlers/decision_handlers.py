@@ -1367,12 +1367,10 @@ def handle_config_command(
         message = f"""⚙️ *Channel Configuration*
         
 *Approval Threshold:* {config.approval_percentage}%
-*Auto-close Hours:* {config.auto_close_hours}h
 *Current Members:* {member_count_display} (fetched dynamically from Slack)
 
 *How to change settings:*
 `/decision config approval_percentage 75` - Set approval to 75%
-`/decision config auto_close_hours 24` - Set auto-close to 24 hours
 """
         return {
             "text": message,
@@ -1391,7 +1389,7 @@ def handle_config_command(
     
     # 3. Validate setting name
     # Note: group_size is no longer configurable here - it's always fetched dynamically from Slack
-    valid_settings = ["approval_percentage", "auto_close_hours"]
+    valid_settings = ["approval_percentage"]
     if setting_name not in valid_settings:
         return {
             "text": f"❌ Invalid setting: `{setting_name}`\n\n*Valid settings:* {', '.join(valid_settings)}\n\n*Note:* Group size is now fetched dynamically from Slack channel members.",

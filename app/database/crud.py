@@ -562,8 +562,7 @@ def get_channel_config(db: Session, channel_id: str) -> ChannelConfig:
             logger.info(f"📝 Creating new config for channel {channel_id}")
             config = ChannelConfig(
                 channel_id=channel_id,
-                approval_percentage=60,  # DEFAULT: 60%
-                auto_close_hours=48
+                approval_percentage=60  # DEFAULT: 60%
             )
             db.add(config)
             db.commit()
@@ -580,8 +579,7 @@ def get_channel_config(db: Session, channel_id: str) -> ChannelConfig:
         # Return default config object (not persisted)
         return ChannelConfig(
             channel_id=channel_id,
-            approval_percentage=60,
-            auto_close_hours=48
+            approval_percentage=60
         )
 
 
@@ -611,12 +609,7 @@ def update_channel_config(
                 config.approval_percentage = new_value
                 changes.append(('approval_percentage', old_value, new_value))
         
-        if 'auto_close_hours' in kwargs:
-            old_value = config.auto_close_hours
-            new_value = kwargs['auto_close_hours']
-            if old_value != new_value:
-                config.auto_close_hours = new_value
-                changes.append(('auto_close_hours', old_value, new_value))
+        # Note: auto_close_hours has been removed - decisions no longer auto-close
         
         # Note: group_size is no longer handled here - it's always fetched from Slack
         
@@ -661,7 +654,7 @@ def log_config_change(
     Args:
         db: Database session
         channel_id: Channel ID where config was changed
-        setting_name: Name of the setting (approval_percentage, auto_close_hours, group_size)
+        setting_name: Name of the setting (approval_percentage)
         old_value: Previous value
         new_value: New value
         changed_by: User ID who made the change
@@ -739,15 +732,6 @@ def validate_config_value(setting: str, value: Any) -> Tuple[bool, str]:
             return True, ""
         except (ValueError, TypeError):
             return False, "Approval percentage must be a valid integer"
-    
-    elif setting == "auto_close_hours":
-        try:
-            val = int(value)
-            if val <= 0:
-                return False, "Auto-close hours must be greater than 0"
-            return True, ""
-        except (ValueError, TypeError):
-            return False, "Auto-close hours must be a valid integer"
     
     else:
         return False, f"Unknown setting: {setting}"

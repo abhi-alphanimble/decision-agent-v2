@@ -1,4 +1,5 @@
 # Standard library imports
+import asyncio
 import json
 import os
 import time
@@ -155,54 +156,31 @@ async def startup_event():
     """Initialize on startup"""
     logger.info("Starting up Slack Decision Agent API...")
     
-    # Ensure database tables exist before handling requests
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database tables are up to date")
-    except Exception as e:
-        logger.error(f"❌ Failed to ensure database tables exist: {e}", exc_info=True)
-        raise
+    # Ensure database tables exist before handling requests with retry logic
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"Attempting database connection (attempt {attempt}/{max_retries})...")
+            Base.metadata.create_all(bind=engine)
+            logger.info("✅ Database tables are up to date")
+            break
+        except Exception as e:
+            if attempt < max_retries:
+                logger.warning(f"⚠️ Database connection attempt {attempt} failed: {e}")
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                logger.error(f"❌ Failed to ensure database tables exist after {max_retries} attempts: {e}", exc_info=True)
+                raise
 
     # Quick connectivity check
     if check_db_connection():
         logger.info("✅ Database connection successful")
     else:
         logger.error("❌ Database connection failed!")
-    
-    # Initialize and start background job scheduler
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from .jobs.auto_close import check_stale_decisions
-        
-        scheduler = BackgroundScheduler()
-        
-        # Schedule auto-close job to run every hour
-        scheduler.add_job(
-            check_stale_decisions,
-            'interval',
-            hours=1,
-            id='auto_close_stale_decisions',
-            name='Auto-close stale decisions',
-            replace_existing=True
-        )
-        
-        scheduler.start()
-        
-        # Store scheduler in app state for shutdown
-        app.state.scheduler = scheduler
-        
-        logger.info("✅ Background scheduler started - auto-close job will run every hour")
-        
-        # Run auto-close immediately on startup to catch any stale decisions
-        logger.info("🔄 Running initial auto-close check on startup...")
-        try:
-            check_stale_decisions()
-            logger.info("✅ Initial auto-close check completed")
-        except Exception as e:
-            logger.error(f"❌ Error in initial auto-close check: {e}", exc_info=True)
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to start background scheduler: {e}", exc_info=True)
     
     logger.info("Server started successfully")
 
@@ -211,15 +189,6 @@ async def startup_event():
 async def shutdown_event():
     """Clean up on shutdown"""
     logger.info("Shutting down Slack Decision Agent API...")
-    
-    # Shutdown scheduler if it exists
-    if hasattr(app.state, 'scheduler'):
-        try:
-            app.state.scheduler.shutdown()
-            logger.info("✅ Background scheduler stopped")
-        except Exception as e:
-            logger.error(f"❌ Error stopping scheduler: {e}")
-    
     engine.dispose()
     logger.info("Database connections closed")
 
@@ -293,85 +262,6 @@ async def system_status(db: Session = Depends(get_db)):
         "total_decisions": total_decisions,
         "total_votes": total_votes
     }
-
-
-# Manual trigger for auto-close job
-@app.post("/api/v1/admin/auto-close")
-async def trigger_auto_close(db: Session = Depends(get_db)):
-    """Manually trigger the auto-close job for stale decisions"""
-    try:
-        from .jobs.auto_close import check_stale_decisions
-        
-        # Get count of pending decisions before
-        pending_before = db.query(Decision).filter(Decision.status == "pending").count()
-        
-        # Run auto-close
-        check_stale_decisions()
-        
-        # Get count after
-        pending_after = db.query(Decision).filter(Decision.status == "pending").count()
-        closed_count = pending_before - pending_after
-        
-        return {
-            "status": "success",
-            "message": f"Auto-close job completed. Closed {closed_count} decision(s).",
-            "pending_before": pending_before,
-            "pending_after": pending_after,
-            "closed": closed_count
-        }
-    except Exception as e:
-        logger.error(f"Error triggering auto-close: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(e)}
-        )
-
-
-# Get stale decisions info
-@app.get("/api/v1/admin/stale-decisions")
-async def get_stale_decisions(db: Session = Depends(get_db)):
-    """Get list of decisions that should be auto-closed"""
-    from datetime import timedelta
-    from .config import config
-    
-    try:
-        # Get all pending decisions
-        pending = db.query(Decision).filter(Decision.status == "pending").all()
-        
-        stale = []
-        for d in pending:
-            # Get channel config for timeout
-            channel_config = db.query(ChannelConfig).filter(
-                ChannelConfig.channel_id == d.channel_id
-            ).first()
-            timeout_hours = channel_config.auto_close_hours if channel_config else config.DECISION_TIMEOUT_HOURS
-            
-            cutoff = get_utc_now() - timedelta(hours=timeout_hours)
-            age_hours = (get_utc_now() - d.created_at).total_seconds() / 3600
-            
-            if d.created_at < cutoff:
-                stale.append({
-                    "id": d.id,
-                    "text": d.text[:50] + "..." if len(d.text) > 50 else d.text,
-                    "channel_id": d.channel_id,
-                    "created_at": d.created_at.isoformat(),
-                    "age_hours": round(age_hours, 1),
-                    "timeout_hours": timeout_hours,
-                    "approvals": d.approval_count,
-                    "rejections": d.rejection_count
-                })
-        
-        return {
-            "total_pending": len(pending),
-            "stale_count": len(stale),
-            "stale_decisions": stale
-        }
-    except Exception as e:
-        logger.error(f"Error fetching stale decisions: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(e)}
-        )
 
 
 # ============================================================================

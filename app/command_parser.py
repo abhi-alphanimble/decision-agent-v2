@@ -33,7 +33,7 @@ class DecisionAction(str, Enum):
     CONFIG = "config"
 
 
-VALID_CONFIG_SETTINGS = {"approval_percentage", "auto_close_hours"}
+VALID_CONFIG_SETTINGS = {"approval_percentage"}
 
 
 ACTION_ALIASES: Dict[str, DecisionAction] = {
@@ -377,8 +377,8 @@ Welcome! I help teams make decisions faster and more democratically.
 *⚙️ Configuration (Admin Only)*
 • `/decision config show` - View current channel settings
 • `/decision config set <setting> <value>` - Update channel settings
-  - Available settings: `approval_percentage`, `auto_close_hours`
-  - Example: `/decision config set auto_close_hours 72`
+  - Available settings: `approval_percentage`
+  - Example: `/decision config set approval_percentage 70`
 
 *💡 Pro Tips*
 • You can't change your vote once submitted.

@@ -6,13 +6,21 @@ from app.config import config
 
 logger = logging.getLogger(__name__)
 
-# Create engine with connection pooling
+# Create engine with connection pooling and timeout settings
 engine = create_engine(
     config.DATABASE_URL,
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,  # Verify connections before using
-    echo=False  # Set to True for SQL query logging
+    pool_recycle=3600,  # Recycle connections after 1 hour
+    echo=False,  # Set to True for SQL query logging
+    connect_args={
+        'connect_timeout': 30,  # 30 second connection timeout
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5
+    }
 )
 
 # Create SessionLocal class

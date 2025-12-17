@@ -121,7 +121,7 @@ def handle_member_left_channel(
 ) -> None:
     """
     Handle member_left_channel event.
-    Checks for unreachable pending decisions and auto-closes them.
+    Checks for unreachable pending decisions and closes them.
     
     Args:
         user_id: Slack user ID of the member who left
@@ -164,7 +164,7 @@ def handle_member_left_channel(
             logger.info(f"✅ All pending decisions are still reachable")
             return
         
-        # Auto-close unreachable decisions
+        # Close unreachable decisions
         closed_decisions = []
         for decision in unreachable_decisions:
             try:
@@ -172,11 +172,11 @@ def handle_member_left_channel(
                 updated_decision = crud.close_decision_as_unreachable(db, decision.id)
                 if updated_decision:
                     closed_decisions.append(updated_decision)
-                    logger.info(f"🔒 Auto-closed decision #{decision.id} as unreachable")
+                    logger.info(f"🔒 Closed decision #{decision.id} as unreachable")
             except Exception as e:
                 logger.error(f"❌ Error closing decision #{decision.id}: {e}")
         
-        # Send notification to channel about auto-closed decisions
+        # Send notification to channel about closed decisions
         if closed_decisions:
             notification = format_unreachable_notification(closed_decisions, user_name, current_member_count)
             try:
@@ -184,7 +184,7 @@ def handle_member_left_channel(
                     channel=channel_id,
                     text=notification
                 )
-                logger.info(f"📢 Sent notification about {len(closed_decisions)} auto-closed decisions")
+                logger.info(f"📢 Sent notification about {len(closed_decisions)} closed decisions")
             except Exception as e:
                 logger.error(f"❌ Error sending notification: {e}")
                 
@@ -194,10 +194,10 @@ def handle_member_left_channel(
 
 def format_unreachable_notification(decisions: list, leaving_member: str, current_count: int) -> str:
     """
-    Format notification message for auto-closed unreachable decisions.
+    Format notification message for closed unreachable decisions.
     
     Args:
-        decisions: List of Decision objects that were auto-closed
+        decisions: List of Decision objects that were closed
         leaving_member: Name of the member who left
         current_count: Current number of members in channel
         
@@ -205,7 +205,7 @@ def format_unreachable_notification(decisions: list, leaving_member: str, curren
         Formatted notification message
     """
     message_parts = [
-        f"⚠️ *{len(decisions)} decision{'s' if len(decisions) != 1 else ''} auto-closed due to member departure*\n\n",
+        f"⚠️ *{len(decisions)} decision{'s' if len(decisions) != 1 else ''} closed due to member departure*\n\n",
         f"_{leaving_member} left the channel. The following pending decisions can no longer reach their approval threshold:_\n\n"
     ]
     

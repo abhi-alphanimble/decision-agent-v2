@@ -241,7 +241,7 @@ PRIVACY_POLICY_HTML = """
                 <li><strong>Slack Workspace Information:</strong> Team ID, team name, and bot access tokens for API communication</li>
                 <li><strong>Decision Data:</strong> Proposals submitted by users, including the text, proposer name, and channel</li>
                 <li><strong>Voting Data:</strong> Votes cast on decisions, including voter name and vote type (approve/reject)</li>
-                <li><strong>Channel Configuration:</strong> Custom settings like approval percentages and timeout periods</li>
+                <li><strong>Channel Configuration:</strong> Custom settings like approval percentages</li>
             </ul>
         </div>
         
@@ -494,8 +494,8 @@ SUPPORT_PAGE_HTML = """
             
             <h3>What happens if no one votes?</h3>
             <p>
-                Decisions automatically expire after 48 hours (configurable per channel). 
-                Expired decisions are marked with an expired status.
+                Decisions remain open until someone votes. They will stay in pending status 
+                until they reach the approval threshold or are manually closed.
             </p>
             
             <h3>How do I change the approval percentage?</h3>

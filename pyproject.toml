@@ -27,9 +27,6 @@ dependencies = [
     "pydantic-core>=2.41.5",
     "annotated-types>=0.7.0",
     
-    # Background Jobs
-    "apscheduler>=3.11.1",
-    
     # HTTP Client
     "requests>=2.32.5",
     
