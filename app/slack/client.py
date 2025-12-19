@@ -218,6 +218,57 @@ class WorkspaceSlackClient:
         except SlackApiError as e:
             self.logger.exception("Error getting channel info: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
             raise
+    
+    def is_bot_member_of_channel(self, channel_id: str) -> bool:
+        """
+        Check if this bot is a member of the specified channel.
+        
+        Args:
+            channel_id: The Slack channel ID to check
+            
+        Returns:
+            True if the bot is a member of the channel, False otherwise
+        """
+        try:
+            # Get the bot's user ID
+            auth_response = self.client.auth_test()
+            bot_user_id = auth_response.get('user_id')
+            
+            if not bot_user_id:
+                self.logger.warning("Could not determine bot user ID")
+                return False
+            
+            # Get channel members (paginated, but we just need to check membership)
+            # Use a cursor-based loop to handle large channels
+            cursor = None
+            while True:
+                response = self.client.conversations_members(
+                    channel=channel_id,
+                    cursor=cursor,
+                    limit=200
+                )
+                
+                members = response.get('members', [])
+                if bot_user_id in members:
+                    self.logger.debug("Bot is a member of channel", extra={"channel_id": channel_id, "bot_user_id": bot_user_id})
+                    return True
+                
+                # Check if there are more pages
+                cursor = response.get('response_metadata', {}).get('next_cursor')
+                if not cursor:
+                    break
+            
+            self.logger.debug("Bot is NOT a member of channel", extra={"channel_id": channel_id, "bot_user_id": bot_user_id})
+            return False
+            
+        except SlackApiError as e:
+            error_code = e.response.get('error') if hasattr(e, 'response') else str(e)
+            # 'not_in_channel' or 'channel_not_found' means bot is not in the channel
+            if error_code in ['not_in_channel', 'channel_not_found']:
+                self.logger.debug("Bot is not in channel (error: %s)", error_code, extra={"channel_id": channel_id})
+                return False
+            self.logger.exception("Error checking bot channel membership: %s", error_code)
+            raise
 
 
 def get_client_for_team(team_id: str, db: Session) -> Optional[WorkspaceSlackClient]:
@@ -319,6 +370,10 @@ if _is_test_mode():
         def get_channel_info(self, channel_id: str) -> dict:
             logger.debug("Mock get_channel_info called", extra={"channel_id": channel_id})
             return {"id": channel_id, "name": "test-channel"}
+
+        def is_bot_member_of_channel(self, channel_id: str) -> bool:
+            logger.debug("Mock is_bot_member_of_channel called", extra={"channel_id": channel_id})
+            return True  # Default to True for tests
 
     slack_client = MockSlackClient()
     

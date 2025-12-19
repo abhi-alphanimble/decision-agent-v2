@@ -14,9 +14,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Load database URL from app config (uses environment variables)
+from app.config.config import config as app_config
+config.set_main_option("sqlalchemy.url", app_config.DATABASE_URL)
+
 # add your model's MetaData object here
 # for 'autogenerate' support
-# AFTER (Correct - includes all models):
 from database.base import Base
 from app.models import Decision, Vote, SlackInstallation, ChannelConfig, ConfigChangeLog
 target_metadata = Base.metadata

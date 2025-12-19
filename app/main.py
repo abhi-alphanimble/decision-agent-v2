@@ -25,7 +25,9 @@ from .handlers.decision_handlers import (
     handle_help_command,
     handle_summarize_command,
     handle_suggest_command,
-    handle_config_command
+    handle_config_command,
+    handle_sync_zoho_command,
+    handle_connect_zoho_command
 )
 from .handlers.member_handlers import handle_member_joined_channel, handle_member_left_channel
 
@@ -281,9 +283,9 @@ def _handle_member_event_sync(event_type: str, user_id: str, user_name: str, cha
     """
     with get_db_session() as db:
         if event_type == "member_joined_channel":
-            handle_member_joined_channel(user_id, user_name, channel_id, db)
+            handle_member_joined_channel(user_id, user_name, channel_id, db, team_id)
         elif event_type == "member_left_channel":
-            handle_member_left_channel(user_id, user_name, channel_id, db)
+            handle_member_left_channel(user_id, user_name, channel_id, db, team_id)
 
 
 def _handle_decision_command_sync(
@@ -310,9 +312,42 @@ def _handle_decision_command_sync(
         Response dict to send back to Slack
     """
     from .command_parser import ParsedCommand, DecisionAction
+    from .slack.client import get_client_for_team
     
     with get_db_session() as db:
         response = None
+        
+        # Get workspace-specific Slack client
+        # In test mode, this returns a mock; in production, returns None if no installation found
+        ws_client = get_client_for_team(team_id, db)
+        
+        # Check if workspace is installed
+        if not ws_client:
+            logger.warning(f"⚠️ Workspace {team_id} is not installed")
+            return {
+                "text": "⚠️ *DeciAgent is not installed in this workspace.*\n\n"
+                       "Please ask a workspace admin to install the app first.",
+                "response_type": "ephemeral"
+            }
+        
+        # Check if bot is a member of this channel
+        try:
+            is_member = ws_client.is_bot_member_of_channel(channel_id)
+            if not is_member:
+                logger.info(f"⚠️ Bot is not a member of channel {channel_id} in team {team_id}")
+                return {
+                    "text": "⚠️ *DeciAgent is not added to this channel yet.*\n\n"
+                           "Please add me to this channel first before using commands.\n\n"
+                           "*How to add DeciAgent:*\n"
+                           "• Type `/invite @DeciAgent` in this channel, or\n"
+                           "• Go to channel settings → Integrations → Add an app\n\n"
+                           "Once I'm added, you can use all `/decision` commands here! 🎉",
+                    "response_type": "ephemeral"
+                }
+        except Exception as e:
+            logger.error(f"Error checking bot channel membership: {e}", exc_info=True)
+            # If we can't determine membership, let the command proceed
+            # (it will fail with a clearer error if bot truly isn't in the channel)
         
         if parsed.action == DecisionAction.PROPOSE:
             response = handle_propose_command(
@@ -414,6 +449,26 @@ def _handle_decision_command_sync(
                 user_name=user_name,
                 channel_id=channel_id,
                 db=db
+            )
+
+        elif parsed.action == DecisionAction.SYNC_ZOHO:
+            response = handle_sync_zoho_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db,
+                team_id=team_id
+            )
+
+        elif parsed.action == DecisionAction.CONNECT_ZOHO:
+            response = handle_connect_zoho_command(
+                parsed=parsed,
+                user_id=user_id,
+                user_name=user_name,
+                channel_id=channel_id,
+                db=db,
+                team_id=team_id
             )
 
         else:
