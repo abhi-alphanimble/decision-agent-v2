@@ -14,7 +14,6 @@ from ..dependencies import get_db
 from ..models import SlackInstallation, ZohoInstallation
 from ..config.config import config
 from ..templates_zoho import (
-    ZOHO_SUCCESS_PAGE_HTML,
     ZOHO_ERROR_PAGE_HTML,
     ZOHO_DASHBOARD_HTML
 )

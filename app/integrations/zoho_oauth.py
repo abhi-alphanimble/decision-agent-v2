@@ -20,7 +20,7 @@ from ..config import config
 from ..dependencies import get_db
 from ..models import ZohoInstallation, SlackInstallation
 from ..utils.encryption import encrypt_token, decrypt_token
-from ..templates_zoho import ZOHO_SUCCESS_PAGE_HTML, ZOHO_ERROR_PAGE_HTML
+from ..templates_zoho import ZOHO_ERROR_PAGE_HTML
 
 logger = logging.getLogger(__name__)
 
