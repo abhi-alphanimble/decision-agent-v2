@@ -726,9 +726,7 @@ async def slack_callback(request: Request, code: Optional[str] = None, db: Sessi
     """
     from .config import config
     from slack_sdk.web import WebClient
-    from fastapi.responses import HTMLResponse
     from .utils.workspace import save_installation
-    from .templates import SUCCESS_PAGE_HTML
     
     if not code:
         # User denied installation
@@ -770,12 +768,12 @@ async def slack_callback(request: Request, code: Optional[str] = None, db: Sessi
             bot_user_id=bot_user_id
         )
         
-        # 4. Return success page
-        success_html = SUCCESS_PAGE_HTML.format(
-            team_name=team_name,
-            team_id=team_id
-        )
-        return HTMLResponse(content=success_html, status_code=200)
+        # 4. Redirect to integrations dashboard (instead of simple success page)
+        # This allows user to continue with Zoho CRM connection
+        from fastapi.responses import RedirectResponse
+        dashboard_url = f"/dashboard?team_id={team_id}"
+        logger.info(f"🔄 Redirecting to dashboard: {dashboard_url}")
+        return RedirectResponse(url=dashboard_url, status_code=302)
 
     except Exception as e:
         logger.error(f"❌ OAuth Access Error: {e}", exc_info=True)

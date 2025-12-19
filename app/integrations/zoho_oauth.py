@@ -435,16 +435,12 @@ async def zoho_install_callback(
             module_status = "error"
             # Don't fail the entire OAuth - user is already connected
         
-        # Show success page
+        # Redirect to dashboard (instead of showing separate success page)
+        # This keeps both integrations on the same dashboard page
         team_name = slack_installation.team_name or team_id
-        return HTMLResponse(
-            content=ZOHO_SUCCESS_PAGE_HTML.format(
-                team_name=team_name,
-                zoho_org_id=zoho_org_id or "Unknown",
-                zoho_domain=zoho_domain,
-                module_status=module_status
-            )
-        )
+        dashboard_url = f"/dashboard?team_id={team_id}"
+        logger.info(f"🔄 Redirecting to dashboard: {dashboard_url}")
+        return RedirectResponse(url=dashboard_url, status_code=302)
         
     except requests.RequestException as e:
         logger.error(f"Request error during token exchange: {e}", exc_info=True)

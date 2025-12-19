@@ -768,6 +768,99 @@ ZOHO_DASHBOARD_HTML = """
         .footer a:hover {{
             text-decoration: underline;
         }}
+        
+        /* Success Message Cards - Minimal Style */
+        .success-card {{
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+        }}
+        
+        .success-card-slack {{
+            background: #f8fafc;
+            border-left: 3px solid #667eea;
+        }}
+        
+        .success-card-zoho {{
+            background: #f8fafc;
+            border-left: 3px solid #38a169;
+        }}
+        
+        .success-header {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }}
+        
+        .success-icon {{
+            font-size: 20px;
+        }}
+        
+        .success-title {{
+            font-size: 15px;
+            font-weight: 600;
+            color: #2d3748;
+        }}
+        
+        .success-subtitle {{
+            font-size: 13px;
+            color: #718096;
+            margin-bottom: 12px;
+        }}
+        
+        .success-commands {{
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px;
+        }}
+        
+        .success-commands-title {{
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #4a5568;
+        }}
+        
+        .command-item {{
+            background: #f7fafc;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: #4a5568;
+        }}
+        
+        .command-item:last-child {{
+            margin-bottom: 0;
+        }}
+        
+        .success-features {{
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px;
+        }}
+        
+        .success-feature {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #4a5568;
+        }}
+        
+        .success-feature:last-child {{
+            margin-bottom: 0;
+        }}
+        
+        .success-feature-icon {{
+            font-size: 14px;
+        }}
     </style>
 </head>
 <body>
@@ -787,22 +880,21 @@ ZOHO_DASHBOARD_HTML = """
                     <span class="card-icon">💬</span>
                     <span class="card-title-text">Slack</span>
                 </div>
-                <span class="status-badge status-connected">Connected</span>
+                <span class="status-badge {slack_status_class}">{slack_status_text}</span>
             </div>
             <div class="card-body">
-                <p>Your Slack workspace is connected to Decision Agent.</p>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="info-label">Status</span>
-                        <span class="info-value">✅ Active</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Team ID</span>
-                        <span class="info-value">{team_id}</span>
-                    </div>
+                <p>{slack_description}</p>
+                
+                {slack_info_html}
+                
+                <div style="margin-top: 24px;">
+                    {slack_action_button}
                 </div>
             </div>
         </div>
+        
+        <!-- Slack Success Message (shown when connected) -->
+        {slack_success_html}
         
         <!-- Zoho CRM Integration Card -->
         <div class="card">
@@ -823,6 +915,9 @@ ZOHO_DASHBOARD_HTML = """
                 </div>
             </div>
         </div>
+        
+        <!-- Zoho Success Message (shown when connected) -->
+        {zoho_success_html}
     </div>
     
     <div class="footer">
