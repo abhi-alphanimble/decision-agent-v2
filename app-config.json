@@ -1,0 +1,9 @@
+{
+    "command": "python app/main.py",
+    "stack": "python_3_13",
+    "env_variables": {
+        "SERVER_PORT": "9000",
+        "ENV": "production"
+    },
+    "memory": 512
+}
