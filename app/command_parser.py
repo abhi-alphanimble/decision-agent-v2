@@ -33,6 +33,7 @@ class DecisionAction(str, Enum):
     CONFIG = "config"
     SYNC_ZOHO = "sync-zoho"
     CONNECT_ZOHO = "connect-zoho"
+    AI_LIMITS = "ai-limits"  # Check AI usage limits
 
 
 VALID_CONFIG_SETTINGS = {"approval_percentage"}
@@ -69,6 +70,13 @@ ACTION_ALIASES: Dict[str, DecisionAction] = {
     "connect_zoho": DecisionAction.CONNECT_ZOHO,
     "zoho-connect": DecisionAction.CONNECT_ZOHO,
     "zohoconnect": DecisionAction.CONNECT_ZOHO,
+    # AI Limits variations
+    "ailimits": DecisionAction.AI_LIMITS,
+    "ai_limits": DecisionAction.AI_LIMITS,
+    "ai-usage": DecisionAction.AI_LIMITS,
+    "aiusage": DecisionAction.AI_LIMITS,
+    "ai_usage": DecisionAction.AI_LIMITS,
+    "limits": DecisionAction.AI_LIMITS,
 }
 
 
@@ -357,6 +365,10 @@ def parse_message(text: str) -> ParsedCommand:
         # No arguments needed - just shows the dashboard URL
         pass
     
+    elif action == DecisionAction.AI_LIMITS:
+        # No arguments needed - shows AI usage limits for the organization
+        pass
+    
     return ParsedCommand(
         command_type=CommandType.DECISION,
         action=action,
@@ -393,6 +405,7 @@ Welcome! I help teams make decisions faster and more democratically.
 *🧠 AI Insights*
 • `/decision summarize <id>` - Get an AI summary of the decision
 • `/decision suggest <id>` - Get AI advice on next steps
+• `/decision ai-limits` - Check your organization's AI usage limits
 
 *⚙️ Configuration (Admin Only)*
 • `/decision config show` - View current channel settings
@@ -408,6 +421,7 @@ Welcome! I help teams make decisions faster and more democratically.
 *💡 Pro Tips*
 • You can't change your vote once submitted.
 • Use `list` to find the ID of a decision.
+• AI commands are limited per month. Use `/decision ai-limits` to check remaining.
 
 """
 

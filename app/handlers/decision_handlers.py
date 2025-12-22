@@ -595,14 +595,34 @@ def handle_summarize_command(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> Dict[str, Any]:
     """
     Handle summarize command to generate AI summary for a decision.
     Command: /decision summarize <decision_id>
+    
+    Args:
+        team_id: Slack team ID for AI usage tracking
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
-    logger.info("Handling SUMMARIZE command", extra={"user_name": user_name})
+    logger.info("Handling SUMMARIZE command", extra={"user_name": user_name, "team_id": team_id})
+
+    # 0. Check AI usage limits
+    if team_id:
+        can_use, current_usage, monthly_limit = crud.check_ai_usage_limit(db, team_id)
+        if not can_use:
+            next_reset = crud.get_next_reset_date()
+            logger.warning(f"AI limit reached for team {team_id}: {current_usage}/{monthly_limit}")
+            return {
+                "text": (
+                    f"🚫 *AI Command Limit Reached*\n\n"
+                    f"You have reached your organization's monthly limit of *{monthly_limit}* AI commands.\n\n"
+                    f"✨ You will get access again from *{next_reset}*.\n\n"
+                    f"💡 Use `/decision ai-limits` to check your usage status."
+                ),
+                "response_type": "ephemeral"
+            }
 
     # 1. Extract decision_id
     if not parsed.args or len(parsed.args) == 0:
@@ -644,8 +664,15 @@ def handle_summarize_command(
                 "response_type": "ephemeral"
             }
 
+        # 5. Increment AI usage after successful call
+        remaining_msg = ""
+        if team_id:
+            new_usage, monthly_limit = crud.increment_ai_usage(db, team_id)
+            remaining = max(0, monthly_limit - new_usage)
+            remaining_msg = f"\n\n---\n_🔢 AI commands remaining this month: *{remaining}/{monthly_limit}*_"
+
         return {
-            "text": f"🤖 *AI Summary for Decision #{decision_id}*\n\n{summary}",
+            "text": f"🤖 *AI Summary for Decision #{decision_id}*\n\n{summary}{remaining_msg}",
             "response_type": "ephemeral"
         }
 
@@ -662,14 +689,34 @@ def handle_suggest_command(
     user_id: str,
     user_name: str,
     channel_id: str,
-    db: Session
+    db: Session,
+    team_id: str = ""
 ) -> Dict[str, Any]:
     """
     Handle suggest command to generate AI suggestions for next steps.
     Command: /decision suggest <decision_id>
+    
+    Args:
+        team_id: Slack team ID for AI usage tracking
     """
     logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
-    logger.info("Handling SUGGEST command", extra={"user_name": user_name})
+    logger.info("Handling SUGGEST command", extra={"user_name": user_name, "team_id": team_id})
+
+    # 0. Check AI usage limits
+    if team_id:
+        can_use, current_usage, monthly_limit = crud.check_ai_usage_limit(db, team_id)
+        if not can_use:
+            next_reset = crud.get_next_reset_date()
+            logger.warning(f"AI limit reached for team {team_id}: {current_usage}/{monthly_limit}")
+            return {
+                "text": (
+                    f"🚫 *AI Command Limit Reached*\n\n"
+                    f"You have reached your organization's monthly limit of *{monthly_limit}* AI commands.\n\n"
+                    f"✨ You will get access again from *{next_reset}*.\n\n"
+                    f"💡 Use `/decision ai-limits` to check your usage status."
+                ),
+                "response_type": "ephemeral"
+            }
 
     # 1. Extract decision_id
     if not parsed.args or len(parsed.args) == 0:
@@ -711,8 +758,15 @@ def handle_suggest_command(
                 "response_type": "ephemeral"
             }
 
+        # 5. Increment AI usage after successful call
+        remaining_msg = ""
+        if team_id:
+            new_usage, monthly_limit = crud.increment_ai_usage(db, team_id)
+            remaining = max(0, monthly_limit - new_usage)
+            remaining_msg = f"\n\n---\n_🔢 AI commands remaining this month: *{remaining}/{monthly_limit}*_"
+
         return {
-            "text": f"🤖 *AI Suggestions for Decision #{decision_id}*\n\n{suggestions}",
+            "text": f"🤖 *AI Suggestions for Decision #{decision_id}*\n\n{suggestions}{remaining_msg}",
             "response_type": "ephemeral"
         }
 
@@ -723,6 +777,103 @@ def handle_suggest_command(
             "response_type": "ephemeral"
         }
 
+
+def handle_ai_limits_command(
+    parsed: ParsedCommand,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    db: Session,
+    team_id: str = ""
+) -> Dict[str, Any]:
+    """
+    Handle ai-limits command to show organization's AI usage status.
+    Command: /decision ai-limits
+    
+    Args:
+        team_id: Slack team ID for AI usage tracking
+    """
+    logger = get_context_logger(__name__, user_id=user_id, channel_id=channel_id)
+    logger.info("Handling AI-LIMITS command", extra={"user_name": user_name, "team_id": team_id})
+
+    if not team_id:
+        logger.warning("No team_id provided for AI limits check")
+        return {
+            "text": "⚠️ Unable to check AI limits. Team information not available.",
+            "response_type": "ephemeral"
+        }
+
+    try:
+        # Get comprehensive AI usage info
+        usage_info = crud.get_ai_usage_info(db, team_id)
+        
+        current_usage = usage_info["current_usage"]
+        monthly_limit = usage_info["monthly_limit"]
+        remaining = usage_info["remaining"]
+        percentage_used = usage_info["percentage_used"]
+        month_year = usage_info["month_year"]
+        limit_reached = usage_info["limit_reached"]
+
+        # Format month for display (e.g., "December 2025")
+        try:
+            from datetime import datetime
+            month_date = datetime.strptime(month_year, "%Y-%m")
+            month_display = month_date.strftime("%B %Y")
+        except Exception:
+            month_display = month_year
+
+        # Build progress bar
+        bar_length = 20
+        filled = int(bar_length * percentage_used / 100)
+        bar = "█" * filled + "░" * (bar_length - filled)
+
+        # Status indicator
+        if limit_reached:
+            status_emoji = "🚫"
+            status_text = "*LIMIT REACHED*"
+        elif percentage_used >= 80:
+            status_emoji = "⚠️"
+            status_text = "Running Low"
+        elif percentage_used >= 50:
+            status_emoji = "📊"
+            status_text = "Normal"
+        else:
+            status_emoji = "✅"
+            status_text = "Plenty Available"
+
+        message = (
+            f"🤖 *AI Usage Limits for Your Organization*\n\n"
+            f"📅 *Period:* {month_display}\n\n"
+            f"*Usage Status:* {status_emoji} {status_text}\n\n"
+            f"`{bar}` *{percentage_used}%*\n\n"
+            f"📈 *Used:* {current_usage} / {monthly_limit} commands\n"
+            f"🔢 *Remaining:* {remaining} commands\n\n"
+        )
+
+        if limit_reached:
+            next_reset = crud.get_next_reset_date()
+            message += (
+                "---\n"
+                f"✨ You will get access again from *{next_reset}*.\n"
+                "💡 Each `/decision summarize` and `/decision suggest` command uses 1 AI credit."
+            )
+        else:
+            message += (
+                "---\n"
+                "💡 *Tip:* Each `/decision summarize` and `/decision suggest` command uses 1 AI credit."
+            )
+
+        return {
+            "text": message,
+            "response_type": "ephemeral"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error getting AI limits: {e}")
+        return {
+            "text": "❌ An error occurred while checking AI limits. Please try again later.",
+            "response_type": "ephemeral"
+        }
 
 def handle_show_command(
     parsed: ParsedCommand,

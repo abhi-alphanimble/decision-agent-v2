@@ -187,3 +187,31 @@ class ZohoInstallation(Base):
             f"zoho_org_id={self.zoho_org_id}, domain={self.zoho_domain})>"
         )
 
+
+class OrganizationAILimits(Base):
+    """
+    Consolidated table for AI usage limits per organization.
+    Combines config (monthly_limit) and usage tracking (command_count) in one table.
+    Uses month_year for automatic monthly reset - new month = new record with count=0.
+    """
+    __tablename__ = "organization_ai_limits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(String(50), ForeignKey("slack_installations.team_id", ondelete="CASCADE"), nullable=False, index=True)
+    month_year = Column(String(7), nullable=False, index=True)  # Format: "YYYY-MM" (e.g., "2025-12")
+    monthly_limit = Column(Integer, nullable=False, default=100)  # Default 100 AI commands per month
+    command_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("team_id", "month_year", name="unique_team_month_limits"),
+        CheckConstraint("monthly_limit > 0", name="check_monthly_limit_positive"),
+        CheckConstraint("command_count >= 0", name="check_command_count_non_negative"),
+        Index("ix_ai_limits_team_month", "team_id", "month_year"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<OrganizationAILimits(id={self.id}, team_id={self.team_id}, "
+            f"month={self.month_year}, limit={self.monthly_limit}, count={self.command_count})>"
+        )

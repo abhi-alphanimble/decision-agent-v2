@@ -735,3 +735,239 @@ def validate_config_value(setting: str, value: Any) -> Tuple[bool, str]:
     
     else:
         return False, f"Unknown setting: {setting}"
+
+
+# ============================================================================
+# AI USAGE TRACKING CRUD OPERATIONS (Simplified - Single Table)
+# ============================================================================
+
+def _get_ai_limits_model():
+    """Lazy import of AI limits model to avoid circular imports."""
+    from ..models import OrganizationAILimits
+    return OrganizationAILimits
+
+
+# Default monthly AI command limit
+DEFAULT_AI_MONTHLY_LIMIT = 100
+
+
+def get_current_month_year() -> str:
+    """Get current month-year string in YYYY-MM format."""
+    now = get_utc_now()
+    return now.strftime("%Y-%m")
+
+
+def get_next_reset_date() -> str:
+    """
+    Get the next AI usage reset date (1st of next month) formatted for display.
+    
+    Returns:
+        Formatted date string like "January 01, 2026"
+    """
+    now = get_utc_now()
+    
+    # Calculate next month
+    if now.month == 12:
+        next_month = 1
+        next_year = now.year + 1
+    else:
+        next_month = now.month + 1
+        next_year = now.year
+    
+    # Create the date for 1st of next month
+    next_reset = now.replace(year=next_year, month=next_month, day=1)
+    
+    return next_reset.strftime("%B %d, %Y")
+
+
+def get_or_create_ai_limits(db: Session, team_id: str, month_year: str = None) -> "OrganizationAILimits":
+    """
+    Get AI limits record for an organization for the current month, or create if not exists.
+    This single function replaces both get_organization_ai_config and get_organization_ai_usage.
+    
+    Args:
+        db: Database session
+        team_id: Slack team ID
+        month_year: Month in YYYY-MM format (defaults to current month)
+    
+    Returns:
+        OrganizationAILimits object with monthly_limit and command_count
+    """
+    OrganizationAILimits = _get_ai_limits_model()
+    
+    if month_year is None:
+        month_year = get_current_month_year()
+    
+    try:
+        record = db.query(OrganizationAILimits).filter(
+            OrganizationAILimits.team_id == team_id,
+            OrganizationAILimits.month_year == month_year
+        ).first()
+        
+        if record is None:
+            # Create new record for this month with default limit
+            logger.info(f"📝 Creating AI limits record for team {team_id} month {month_year}")
+            record = OrganizationAILimits(
+                team_id=team_id,
+                month_year=month_year,
+                monthly_limit=DEFAULT_AI_MONTHLY_LIMIT,
+                command_count=0
+            )
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+            logger.info(f"✅ Created AI limits for team {team_id}: 0/{DEFAULT_AI_MONTHLY_LIMIT}")
+        
+        return record
+    except Exception as e:
+        logger.error(f"Database error in get_or_create_ai_limits: {e}")
+        db.rollback()
+        # Return non-persisted default
+        return OrganizationAILimits(
+            team_id=team_id,
+            month_year=month_year,
+            monthly_limit=DEFAULT_AI_MONTHLY_LIMIT,
+            command_count=0
+        )
+
+
+def check_ai_usage_limit(db: Session, team_id: str) -> Tuple[bool, int, int]:
+    """
+    Check if an organization has reached their monthly AI command limit.
+    
+    Args:
+        db: Database session
+        team_id: Slack team ID
+    
+    Returns:
+        Tuple of (can_use: bool, current_usage: int, monthly_limit: int)
+    """
+    try:
+        record = get_or_create_ai_limits(db, team_id)
+        
+        monthly_limit = record.monthly_limit
+        current_usage = record.command_count
+        can_use = current_usage < monthly_limit
+        
+        logger.debug(
+            f"AI usage check for team {team_id}: {current_usage}/{monthly_limit} "
+            f"({'allowed' if can_use else 'LIMIT REACHED'})"
+        )
+        
+        return can_use, current_usage, monthly_limit
+    except Exception as e:
+        logger.error(f"Error checking AI usage limit: {e}")
+        # Default to allowing usage on error to not block users
+        return True, 0, DEFAULT_AI_MONTHLY_LIMIT
+
+
+def increment_ai_usage(db: Session, team_id: str) -> Tuple[int, int]:
+    """
+    Increment AI usage counter for an organization.
+    
+    Args:
+        db: Database session
+        team_id: Slack team ID
+    
+    Returns:
+        Tuple of (new_usage_count: int, monthly_limit: int)
+    """
+    try:
+        record = get_or_create_ai_limits(db, team_id)
+        
+        # Increment count
+        record.command_count += 1
+        record.last_used_at = get_utc_now()
+        
+        db.commit()
+        db.refresh(record)
+        
+        logger.info(
+            f"📈 AI usage incremented for team {team_id}: "
+            f"{record.command_count}/{record.monthly_limit}"
+        )
+        
+        return record.command_count, record.monthly_limit
+    except Exception as e:
+        logger.error(f"Error incrementing AI usage: {e}")
+        db.rollback()
+        return 0, DEFAULT_AI_MONTHLY_LIMIT
+
+
+def get_ai_usage_info(db: Session, team_id: str) -> Dict[str, Any]:
+    """
+    Get comprehensive AI usage information for display.
+    
+    Args:
+        db: Database session
+        team_id: Slack team ID
+    
+    Returns:
+        Dictionary with usage info
+    """
+    try:
+        record = get_or_create_ai_limits(db, team_id)
+        
+        monthly_limit = record.monthly_limit
+        current_usage = record.command_count
+        remaining = max(0, monthly_limit - current_usage)
+        percentage_used = (current_usage / monthly_limit * 100) if monthly_limit > 0 else 0
+        
+        return {
+            "current_usage": current_usage,
+            "monthly_limit": monthly_limit,
+            "remaining": remaining,
+            "month_year": record.month_year,
+            "percentage_used": round(percentage_used, 1),
+            "limit_reached": current_usage >= monthly_limit
+        }
+    except Exception as e:
+        logger.error(f"Error getting AI usage info: {e}")
+        return {
+            "current_usage": 0,
+            "monthly_limit": DEFAULT_AI_MONTHLY_LIMIT,
+            "remaining": DEFAULT_AI_MONTHLY_LIMIT,
+            "month_year": get_current_month_year(),
+            "percentage_used": 0,
+            "limit_reached": False
+        }
+
+
+def update_organization_ai_limit(
+    db: Session, 
+    team_id: str, 
+    new_limit: int
+) -> Optional["OrganizationAILimits"]:
+    """
+    Update the monthly AI command limit for an organization (current month).
+    
+    Args:
+        db: Database session
+        team_id: Slack team ID
+        new_limit: New monthly limit (must be > 0)
+    
+    Returns:
+        Updated OrganizationAILimits or None on error
+    """
+    if new_limit <= 0:
+        logger.error(f"Invalid AI limit: {new_limit}. Must be > 0")
+        return None
+    
+    try:
+        record = get_or_create_ai_limits(db, team_id)
+        old_limit = record.monthly_limit
+        record.monthly_limit = new_limit
+        
+        db.commit()
+        db.refresh(record)
+        
+        logger.info(
+            f"📝 Updated AI limit for team {team_id}: "
+            f"{old_limit} → {new_limit}"
+        )
+        
+        return record
+    except Exception as e:
+        logger.error(f"Error updating AI limit: {e}")
+        db.rollback()
+        return None
