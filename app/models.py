@@ -19,6 +19,52 @@ from sqlalchemy.orm import relationship
 from database.base import Base
 
 
+class ZohoInstallation(Base):
+    """
+    Primary organization table - Zoho CRM connection is required first.
+    Uses zoho_org_id as the organization identifier.
+    """
+    __tablename__ = "zoho_installations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    zoho_org_id = Column(String(100), unique=True, nullable=False, index=True)  # Primary org identifier
+    zoho_domain = Column(String(50), nullable=False)  # e.g., 'com', 'in', 'eu'
+    access_token = Column(Text, nullable=False)  # Encrypted
+    refresh_token = Column(Text, nullable=False)  # Encrypted
+    token_expires_at = Column(DateTime, nullable=True)
+    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    installed_by = Column(String(100), nullable=True)  # User who connected
+
+    # Relationships
+    slack_installation = relationship("SlackInstallation", back_populates="zoho_installation", uselist=False, cascade="all, delete-orphan")
+    decisions = relationship("Decision", back_populates="zoho_installation", cascade="all, delete-orphan")
+    ai_limits = relationship("OrganizationAILimits", back_populates="zoho_installation", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return (
+            f"<ZohoInstallation(id={self.id}, zoho_org_id={self.zoho_org_id}, "
+            f"domain={self.zoho_domain})>"
+        )
+
+
+class SlackInstallation(Base):
+    """Slack workspace installation - linked to Zoho organization."""
+    __tablename__ = "slack_installations"
+
+    team_id = Column(String, primary_key=True, index=True)
+    team_name = Column(String, nullable=True)
+    access_token = Column(String, nullable=False)
+    bot_user_id = Column(String, nullable=False)
+    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    zoho_org_id = Column(String(100), ForeignKey("zoho_installations.zoho_org_id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Relationship back to Zoho
+    zoho_installation = relationship("ZohoInstallation", back_populates="slack_installation")
+
+    def __repr__(self) -> str:
+        return f"<SlackInstallation(team_id={self.team_id}, team_name='{self.team_name}', zoho_org_id='{self.zoho_org_id}')>"
+
+
 class Decision(Base):
     __tablename__ = "decisions"
 
@@ -28,7 +74,8 @@ class Decision(Base):
     proposer_phone = Column(String, nullable=False, index=True)
     proposer_name = Column(String, nullable=False)
     channel_id = Column(String, nullable=False, index=True)
-    team_id = Column(String, ForeignKey("slack_installations.team_id", ondelete="CASCADE"), nullable=True, index=True)
+    team_id = Column(String, nullable=True, index=True)  # Slack team ID for reference
+    zoho_org_id = Column(String(100), ForeignKey("zoho_installations.zoho_org_id", ondelete="CASCADE"), nullable=False, index=True)
     group_size_at_creation = Column(Integer, nullable=False)
     approval_threshold = Column(Integer, nullable=False)
     approval_count = Column(Integer, default=0, nullable=False)
@@ -38,6 +85,7 @@ class Decision(Base):
     zoho_synced = Column(Boolean, default=False, nullable=False)  # Track if synced to Zoho CRM
 
     votes = relationship("Vote", back_populates="decision", cascade="all, delete-orphan")
+    zoho_installation = relationship("ZohoInstallation", back_populates="decisions")
 
     __table_args__ = (
         CheckConstraint("approval_count >= 0", name="check_approval_count_positive"),
@@ -112,19 +160,6 @@ class Vote(Base):
         self.vote_type = value
 
 
-class SlackInstallation(Base):
-    __tablename__ = "slack_installations"
-
-    team_id = Column(String, primary_key=True, index=True)
-    team_name = Column(String, nullable=True)
-    access_token = Column(String, nullable=False)
-    bot_user_id = Column(String, nullable=False)
-    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-
-    def __repr__(self) -> str:
-        return f"<SlackInstallation(team_id={self.team_id}, team_name='{self.team_name}')>"
-
-
 class ChannelConfig(Base):
     __tablename__ = "channel_configs"
 
@@ -167,27 +202,6 @@ class ConfigChangeLog(Base):
         )
 
 
-class ZohoInstallation(Base):
-    """Store Zoho OAuth credentials per Slack team."""
-    __tablename__ = "zoho_installations"
-
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(String(50), ForeignKey("slack_installations.team_id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
-    zoho_org_id = Column(String(100), nullable=True)  # Zoho organization ID
-    zoho_domain = Column(String(50), nullable=False)  # e.g., 'com', 'in', 'eu'
-    access_token = Column(Text, nullable=False)  # Encrypted
-    refresh_token = Column(Text, nullable=False)  # Encrypted
-    token_expires_at = Column(DateTime, nullable=True)
-    installed_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
-    installed_by = Column(String(100), nullable=True)  # User who connected
-
-    def __repr__(self) -> str:
-        return (
-            f"<ZohoInstallation(id={self.id}, team_id={self.team_id}, "
-            f"zoho_org_id={self.zoho_org_id}, domain={self.zoho_domain})>"
-        )
-
-
 class OrganizationAILimits(Base):
     """
     Consolidated table for AI usage limits per organization.
@@ -197,21 +211,24 @@ class OrganizationAILimits(Base):
     __tablename__ = "organization_ai_limits"
 
     id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(String(50), ForeignKey("slack_installations.team_id", ondelete="CASCADE"), nullable=False, index=True)
+    zoho_org_id = Column(String(100), ForeignKey("zoho_installations.zoho_org_id", ondelete="CASCADE"), nullable=False, index=True)
     month_year = Column(String(7), nullable=False, index=True)  # Format: "YYYY-MM" (e.g., "2025-12")
     monthly_limit = Column(Integer, nullable=False, default=100)  # Default 100 AI commands per month
     command_count = Column(Integer, nullable=False, default=0)
     last_used_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
+    # Relationship
+    zoho_installation = relationship("ZohoInstallation", back_populates="ai_limits")
+
     __table_args__ = (
-        UniqueConstraint("team_id", "month_year", name="unique_team_month_limits"),
+        UniqueConstraint("zoho_org_id", "month_year", name="unique_org_month_limits"),
         CheckConstraint("monthly_limit > 0", name="check_monthly_limit_positive"),
         CheckConstraint("command_count >= 0", name="check_command_count_non_negative"),
-        Index("ix_ai_limits_team_month", "team_id", "month_year"),
+        Index("ix_ai_limits_org_month", "zoho_org_id", "month_year"),
     )
 
     def __repr__(self) -> str:
         return (
-            f"<OrganizationAILimits(id={self.id}, team_id={self.team_id}, "
+            f"<OrganizationAILimits(id={self.id}, zoho_org_id={self.zoho_org_id}, "
             f"month={self.month_year}, limit={self.monthly_limit}, count={self.command_count})>"
         )

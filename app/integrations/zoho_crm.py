@@ -2,7 +2,8 @@
 Zoho CRM API client for Decision Agent integration.
 Handles OAuth token management and API requests with multi-tenant support.
 
-Each Slack team has their own Zoho CRM connection stored in the database.
+Each organization has their own Zoho CRM connection stored in the database.
+Uses zoho_org_id as the primary identifier.
 """
 import logging
 import os
@@ -21,37 +22,36 @@ class ZohoCRMClient:
     """
     Multi-tenant Zoho CRM API client with OAuth 2.0 support.
     
-    Each instance is tied to a specific Slack team and uses that team's
-    Zoho credentials from the database.
+    Each instance is tied to a specific Zoho organization using zoho_org_id.
     """
 
-    def __init__(self, team_id: str, db: Session):
+    def __init__(self, org_id: str, db: Session):
         """
-        Initialize Zoho CRM client for a specific team.
+        Initialize Zoho CRM client for a specific organization.
         
         Args:
-            team_id: Slack team ID
+            org_id: Zoho organization ID (zoho_org_id)
             db: Database session
             
         Raises:
-            ValueError: If team has no Zoho installation
+            ValueError: If organization has no Zoho installation
         """
-        self.team_id = team_id
+        self.org_id = org_id
         self.db = db
         
-        # Fetch Zoho installation from database
+        # Fetch Zoho installation from database by org_id
         self.installation = db.query(ZohoInstallation).filter(
-            ZohoInstallation.team_id == team_id
+            ZohoInstallation.zoho_org_id == org_id
         ).first()
         
         if not self.installation:
-            raise ValueError(f"Team {team_id} has no Zoho CRM connection")
+            raise ValueError(f"Organization {org_id} has no Zoho CRM connection")
         
-        # Get OAuth credentials from environment (app-level, same for all teams)
+        # Get OAuth credentials from environment (app-level, same for all orgs)
         self.client_id = os.getenv("ZOHO_CLIENT_ID", "")
         self.client_secret = os.getenv("ZOHO_CLIENT_SECRET", "")
         
-        # Build API URLs based on team's data center
+        # Build API URLs based on org's data center
         domain = self.installation.zoho_domain or "com"
         self.api_domain = f"https://www.zohoapis.{domain}"
         self.accounts_url = f"https://accounts.zoho.{domain}"
@@ -62,8 +62,7 @@ class ZohoCRMClient:
         self.token_expiry = self.installation.token_expires_at
         
         logger.debug(
-            f"Initialized Zoho CRM client for team {team_id}, "
-            f"org: {self.installation.zoho_org_id}, domain: {domain}"
+            f"Initialized Zoho CRM client for org {org_id}, domain: {domain}"
         )
     
     def _get_decisions_module_name(self) -> str:
@@ -130,7 +129,7 @@ class ZohoCRMClient:
             if token_expiry.tzinfo is None:
                 token_expiry = token_expiry.replace(tzinfo=UTC)
             if now < (token_expiry - timedelta(minutes=5)):
-                logger.debug(f"Using cached access token for team {self.team_id}")
+                logger.debug(f"Using cached access token for org {self.org_id}")
                 return self.access_token
         
         # Refresh the token
@@ -158,7 +157,7 @@ class ZohoCRMClient:
             return None
         
         if not self.refresh_token:
-            logger.error(f"No refresh token for team {self.team_id}")
+            logger.error(f"No refresh token for org {self.org_id}")
             return None
         
         # Retry with exponential backoff for network errors
@@ -168,13 +167,13 @@ class ZohoCRMClient:
                     # Exponential backoff: 1s, 2s, 4s
                     wait_time = 2 ** (attempt - 1)
                     logger.info(
-                        f"Retrying token refresh for team {self.team_id} "
+                        f"Retrying token refresh for org {self.org_id} "
                         f"(attempt {attempt + 1}/{max_retries}) after {wait_time}s..."
                     )
                     import time
                     time.sleep(wait_time)
                 
-                logger.info(f"Refreshing Zoho access token for team {self.team_id}...")
+                logger.info(f"Refreshing Zoho access token for org {self.org_id}...")
                 
                 response = requests.post(
                     f"{self.accounts_url}/oauth/v2/token",
@@ -207,7 +206,7 @@ class ZohoCRMClient:
                     self.db.commit()
                     
                     logger.info(
-                        f"✅ Zoho access token refreshed for team {self.team_id} "
+                        f"✅ Zoho access token refreshed for org {self.org_id} "
                         f"(expires in {expires_in}s)"
                     )
                     return new_access_token
@@ -220,14 +219,14 @@ class ZohoCRMClient:
                     error_msg = error_data.get("error", response.text)
                     
                     logger.error(
-                        f"❌ Permanent error refreshing token for team {self.team_id}: "
+                        f"❌ Permanent error refreshing token for org {self.org_id}: "
                         f"{response.status_code} - {error_msg}"
                     )
                     
                     # Check if it's a revoked/invalid refresh token
                     if "invalid" in error_msg.lower() or "revoked" in error_msg.lower():
                         logger.warning(
-                            f"⚠️ Refresh token for team {self.team_id} is invalid/revoked. "
+                            f"⚠️ Refresh token for org {self.org_id} is invalid/revoked. "
                             "Team needs to re-authorize via OAuth."
                         )
                         # Could mark installation as disconnected here if we add status field
@@ -239,14 +238,14 @@ class ZohoCRMClient:
                     # 429 = Rate limit
                     # 5xx = Server errors
                     logger.warning(
-                        f"⚠️ Temporary error refreshing token for team {self.team_id}: "
+                        f"⚠️ Temporary error refreshing token for org {self.org_id}: "
                         f"{response.status_code} - {response.text}"
                     )
                     
                     # Will retry (continue loop)
                     if attempt == max_retries - 1:
                         logger.error(
-                            f"❌ Max retries reached for team {self.team_id}, giving up"
+                            f"❌ Max retries reached for org {self.org_id}, giving up"
                         )
                         return None
                     continue
@@ -254,14 +253,14 @@ class ZohoCRMClient:
                 # Other errors
                 else:
                     logger.error(
-                        f"❌ Unexpected error refreshing token for team {self.team_id}: "
+                        f"❌ Unexpected error refreshing token for org {self.org_id}: "
                         f"{response.status_code} - {response.text}"
                     )
                     return None
                     
             except requests.exceptions.Timeout:
                 logger.warning(
-                    f"⚠️ Timeout refreshing token for team {self.team_id} "
+                    f"⚠️ Timeout refreshing token for org {self.org_id} "
                     f"(attempt {attempt + 1}/{max_retries})"
                 )
                 if attempt == max_retries - 1:
@@ -271,7 +270,7 @@ class ZohoCRMClient:
                 
             except requests.exceptions.ConnectionError:
                 logger.warning(
-                    f"⚠️ Connection error refreshing token for team {self.team_id} "
+                    f"⚠️ Connection error refreshing token for org {self.org_id} "
                     f"(attempt {attempt + 1}/{max_retries})"
                 )
                 if attempt == max_retries - 1:
@@ -281,7 +280,7 @@ class ZohoCRMClient:
                 
             except Exception as e:
                 logger.error(
-                    f"❌ Unexpected exception refreshing token for team {self.team_id}: {e}",
+                    f"❌ Unexpected exception refreshing token for org {self.org_id}: {e}",
                     exc_info=True
                 )
                 return None
@@ -304,7 +303,7 @@ class ZohoCRMClient:
         """
         access_token = self.get_access_token()
         if not access_token:
-            logger.error(f"Could not obtain access token for team {self.team_id}")
+            logger.error(f"Could not obtain access token for org {self.org_id}")
             return None
         
         url = f"{self.api_domain}/crm/v6/{endpoint}"
@@ -328,13 +327,13 @@ class ZohoCRMClient:
                 return response.json()
             else:
                 logger.error(
-                    f"API request failed for team {self.team_id}: "
+                    f"API request failed for org {self.org_id}: "
                     f"{method} {endpoint} - {response.status_code}: {response.text}"
                 )
                 return None
                 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Request error for team {self.team_id}: {e}", exc_info=True)
+            logger.error(f"Request error for org {self.org_id}: {e}", exc_info=True)
             return None
     
     def create_decision(self, decision_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -359,13 +358,13 @@ class ZohoCRMClient:
             # Success if code is 0 or message is "record added"
             if record.get("code") == 0 or "added" in record.get("message", "").lower():
                 logger.info(
-                    f"✅ Created Zoho decision record for team {self.team_id}: "
+                    f"✅ Created Zoho decision record for org {self.org_id}: "
                     f"{record.get('id')} | {record.get('message')}"
                 )
                 return record
             else:
                 logger.error(
-                    f"❌ Zoho API error for team {self.team_id}: "
+                    f"❌ Zoho API error for org {self.org_id}: "
                     f"{record.get('message')}"
                 )
                 return None
@@ -393,13 +392,13 @@ class ZohoCRMClient:
             # Success if code is 0 or message indicates update success
             if record.get("code") == 0 or "updated" in record.get("message", "").lower():
                 logger.info(
-                    f"✅ Updated Zoho decision record for team {self.team_id}: "
+                    f"✅ Updated Zoho decision record for org {self.org_id}: "
                     f"{decision_id} | {record.get('message')}"
                 )
                 return record
             else:
                 logger.error(
-                    f"❌ Zoho API error for team {self.team_id}: "
+                    f"❌ Zoho API error for org {self.org_id}: "
                     f"{record.get('message')}"
                 )
                 return None
@@ -459,10 +458,10 @@ class ZohoCRMClient:
         Returns:
             True if connection successful, False otherwise
         """
-        logger.info(f"Testing Zoho CRM API connection for team {self.team_id}...")
+        logger.info(f"Testing Zoho CRM API connection for org {self.org_id}...")
         access_token = self.get_access_token()
         if not access_token:
-            logger.error(f"❌ Could not obtain access token for team {self.team_id}")
+            logger.error(f"❌ Could not obtain access token for org {self.org_id}")
             return False
         
         # Test with a simple request that lists decisions
@@ -478,18 +477,18 @@ class ZohoCRMClient:
             # 200 = success with data, 204 = success with no data
             if response.status_code in [200, 204]:
                 logger.info(
-                    f"✅ Zoho CRM API connection successful for team {self.team_id}"
+                    f"✅ Zoho CRM API connection successful for org {self.org_id}"
                 )
                 return True
             else:
                 logger.error(
                     f"❌ Zoho CRM API returned status {response.status_code} "
-                    f"for team {self.team_id}: {response.text}"
+                    f"for org {self.org_id}: {response.text}"
                 )
                 return False
         except Exception as e:
             logger.error(
-                f"❌ Zoho CRM API connection failed for team {self.team_id}: {e}"
+                f"❌ Zoho CRM API connection failed for org {self.org_id}: {e}"
             )
             return False
 
@@ -505,12 +504,12 @@ class ZohoCRMClient:
         """
         access_token = self.get_access_token()
         if not access_token:
-            logger.error(f"Cannot create module - no access token for team {self.team_id}")
+            logger.error(f"Cannot create module - no access token for org {self.org_id}")
             return False
         
         # First, check if module already exists
         if self._check_module_exists("Slack_Decisions"):
-            logger.info(f"✅ Slack_Decisions module already exists for team {self.team_id}")
+            logger.info(f"✅ Slack_Decisions module already exists for org {self.org_id}")
             return True
 
         profiles = self._get_default_profiles()
@@ -551,7 +550,7 @@ class ZohoCRMClient:
             }]
         }
         
-        logger.info(f"📤 Creating Slack_Decisions module for team {self.team_id}")
+        logger.info(f"📤 Creating Slack_Decisions module for org {self.org_id}")
         logger.debug(f"Module payload: {module_payload}")
         
         try:
@@ -562,7 +561,7 @@ class ZohoCRMClient:
             
             if response.status_code in [200, 201]:
                 response_data = response.json()
-                logger.info(f"✅ Created Slack_Decisions module for team {self.team_id}")
+                logger.info(f"✅ Created Slack_Decisions module for org {self.org_id}")
                 logger.info(f"📋 Module creation details: {response_data}")
                 
                 # Wait for module to become ready
@@ -575,7 +574,7 @@ class ZohoCRMClient:
                 return True
             elif response.status_code == 202:
                 # 202 = Accepted, module creation is in progress
-                logger.info(f"⏳ Module creation accepted (202) for team {self.team_id}, may take a moment")
+                logger.info(f"⏳ Module creation accepted (202) for org {self.org_id}, may take a moment")
                 # Wait for readiness then create fields
                 if not self._verify_module_ready(max_attempts=15, interval=2):
                     logger.error("Module not ready after 30s; aborting field creation")
@@ -585,7 +584,7 @@ class ZohoCRMClient:
             else:
                 # Log detailed error info
                 logger.error(
-                    f"❌ Failed to create module for team {self.team_id}: "
+                    f"❌ Failed to create module for org {self.org_id}: "
                     f"HTTP {response.status_code}"
                 )
                 try:
@@ -600,10 +599,10 @@ class ZohoCRMClient:
                     logger.error(f"❌ Raw error response: {response.text}")
                 return False
         except requests.exceptions.Timeout:
-            logger.error(f"⏱️ Timeout creating module for team {self.team_id}")
+            logger.error(f"⏱️ Timeout creating module for org {self.org_id}")
             return False
         except Exception as e:
-            logger.error(f"❌ Error creating module for team {self.team_id}: {e}", exc_info=True)
+            logger.error(f"❌ Error creating module for org {self.org_id}: {e}", exc_info=True)
             return False
 
     def _check_module_exists(self, module_name: str) -> bool:
@@ -624,9 +623,9 @@ class ZohoCRMClient:
                 modules = response.json().get("modules", [])
                 for module in modules:
                     if module.get("api_name") == module_name:
-                        logger.debug(f"Module '{module_name}' found for team {self.team_id}")
+                        logger.debug(f"Module '{module_name}' found for org {self.org_id}")
                         return True
-            logger.debug(f"Module '{module_name}' not found for team {self.team_id}")
+            logger.debug(f"Module '{module_name}' not found for org {self.org_id}")
             return False
         except Exception as e:
             logger.error(f"Error checking module existence: {e}")
@@ -684,7 +683,7 @@ class ZohoCRMClient:
         """Create all required fields in the Slack_Decisions module."""
         access_token = self.get_access_token()
         if not access_token:
-            logger.error(f"Cannot create fields - no access token for team {self.team_id}")
+            logger.error(f"Cannot create fields - no access token for org {self.org_id}")
             return False
         
         # Always use Slack_Decisions module
@@ -720,7 +719,7 @@ class ZohoCRMClient:
         
         logger.info(
             f"📤 Creating fields in module '{module_name}' (layout: {layout_id}) "
-            f"for team {self.team_id}"
+            f"for org {self.org_id}"
         )
         
         # Define fields to match the standard layout shown in CRM
@@ -831,7 +830,7 @@ class ZohoCRMClient:
                 
                 if response.status_code in [200, 201]:
                     logger.info(
-                        f"✅ Created field '{field['api_name']}' for team {self.team_id}"
+                        f"✅ Created field '{field['api_name']}' for org {self.org_id}"
                     )
                     created_count += 1
                 else:
@@ -847,7 +846,7 @@ class ZohoCRMClient:
             except Exception as e:
                 logger.error(f"Error creating field '{field['api_name']}': {e}")
         
-        logger.info(f"✅ Created {created_count}/{len(fields)} fields for team {self.team_id}")
+        logger.info(f"✅ Created {created_count}/{len(fields)} fields for org {self.org_id}")
         return created_count > 0
 
 

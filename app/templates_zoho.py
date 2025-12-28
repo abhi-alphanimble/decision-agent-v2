@@ -617,36 +617,13 @@ ZOHO_DASHBOARD_HTML = """
     <div class="header">
         <div class="logo">📊</div>
         <h1>Integrations Dashboard</h1>
-        <p class="team-name">Team: {team_name}</p>
+        <p class="team-name">{team_name}</p>
     </div>
     
     <div class="container">
         {alert_html}
         
-        <!-- Slack Integration Card -->
-        <div class="card">
-            <div class="card-header">
-                <div class="card-title">
-                    <span class="card-icon">💬</span>
-                    <span class="card-title-text">Slack</span>
-                </div>
-                <span class="status-badge {slack_status_class}">{slack_status_text}</span>
-            </div>
-            <div class="card-body">
-                <p>{slack_description}</p>
-                
-                {slack_info_html}
-                
-                <div style="margin-top: 24px;">
-                    {slack_action_button}
-                </div>
-            </div>
-        </div>
-        
-        <!-- Slack Success Message (shown when connected) -->
-        {slack_success_html}
-        
-        <!-- Zoho CRM Integration Card -->
+        <!-- Zoho CRM Integration Card (FIRST - Primary Connection) -->
         <div class="card">
             <div class="card-header">
                 <div class="card-title">
@@ -668,6 +645,29 @@ ZOHO_DASHBOARD_HTML = """
         
         <!-- Zoho Success Message (shown when connected) -->
         {zoho_success_html}
+        
+        <!-- Slack Integration Card (SECOND - Requires Zoho) -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">
+                    <span class="card-icon">💬</span>
+                    <span class="card-title-text">Slack</span>
+                </div>
+                <span class="status-badge {slack_status_class}">{slack_status_text}</span>
+            </div>
+            <div class="card-body">
+                <p>{slack_description}</p>
+                
+                {slack_info_html}
+                
+                <div style="margin-top: 24px;">
+                    {slack_action_button}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slack Success Message (shown when connected) -->
+        {slack_success_html}
     </div>
     
     <div class="footer">

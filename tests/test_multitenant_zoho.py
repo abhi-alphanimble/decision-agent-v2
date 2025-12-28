@@ -31,8 +31,8 @@ try:
     sig = inspect.signature(ZohoCRMClient.__init__)
     params = list(sig.parameters.keys())
     
-    # Should have: self, team_id, db
-    if 'team_id' in params and 'db' in params:
+    # Should have: self, org_id, db (changed from team_id to org_id)
+    if 'org_id' in params and 'db' in params:
         print(f"   ✅ Constructor has correct parameters: {params}")
     else:
         print(f"   ❌ Constructor missing parameters. Found: {params}")
@@ -46,19 +46,19 @@ print("\n3. Testing sync function signatures...")
 try:
     import inspect
     
-    # Check sync_decision_to_zoho
+    # Check sync_decision_to_zoho (now uses org_id instead of team_id)
     sig = inspect.signature(sync_decision_to_zoho)
     params = list(sig.parameters.keys())
-    if 'team_id' in params and 'db' in params:
+    if 'org_id' in params and 'db' in params:
         print(f"   ✅ sync_decision_to_zoho has correct parameters: {params}")
     else:
         print(f"   ❌ sync_decision_to_zoho missing parameters. Found: {params}")
         sys.exit(1)
     
-    # Check sync_vote_to_zoho
+    # Check sync_vote_to_zoho (now uses org_id instead of team_id)
     sig = inspect.signature(sync_vote_to_zoho)
     params = list(sig.parameters.keys())
-    if 'team_id' in params and 'db' in params:
+    if 'org_id' in params and 'db' in params:
         print(f"   ✅ sync_vote_to_zoho has correct parameters: {params}")
     else:
         print(f"   ❌ sync_vote_to_zoho missing parameters. Found: {params}")
@@ -68,7 +68,7 @@ except Exception as e:
     print(f"   ❌ Failed to check sync functions: {e}")
     sys.exit(1)
 
-# Test that client requires team_id (cannot initialize without it)
+# Test that client requires org_id (cannot initialize without it)
 print("\n4. Testing client initialization error handling...")
 try:
     # Mock database session
@@ -82,10 +82,10 @@ try:
                     return MockResult()
             return MockQuery()
     
-    # Try to initialize without a valid team
+    # Try to initialize without a valid org
     try:
-        client = ZohoCRMClient("NONEXISTENT_TEAM", MockDB())
-        print("   ❌ Client should have raised ValueError for nonexistent team")
+        client = ZohoCRMClient("NONEXISTENT_ORG", MockDB())
+        print("   ❌ Client should have raised ValueError for nonexistent org")
         sys.exit(1)
     except ValueError as e:
         if "has no Zoho CRM connection" in str(e):

@@ -44,6 +44,7 @@ from .ai.ai_client import ai_client
 from .slack import slack_client
 from .integrations.zoho_oauth import router as zoho_oauth_router
 from .integrations.dashboard import dashboard_router
+from .slack.oauth import router as slack_oauth_router
 from .utils import get_utc_now
 from .utils.slack_parsing import parse_slash_command, parse_event_message, parse_member_event
 
@@ -82,8 +83,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include OAuth routers for Zoho CRM integration
+# Include OAuth routers for Zoho CRM and Slack integration
 app.include_router(zoho_oauth_router)
+app.include_router(slack_oauth_router)
 app.include_router(dashboard_router)
 
 # Request logging middleware
@@ -734,122 +736,6 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
     Slack Events API endpoint - routes to the same handler as /webhook/slack
     """
     return await slack_webhook(request, background_tasks)
-
-# Slack OAuth installation endpoints
-@app.get("/slack/install")
-async def slack_install():
-    """
-    Initiates the Slack OAuth 2.0 installation flow.
-    Redirects the user to Slack's authorization URL.
-    """
-    from app.config import config
-    from fastapi.responses import RedirectResponse
-    
-    # Scopes required for the distributed bot
-    # See: https://api.slack.com/scopes
-    scopes = [
-        # Messaging
-        "chat:write",            # Send messages
-        "chat:write.public",     # Send messages to channels without joining
-        
-        # Commands & Events
-        "commands",              # Add slash commands
-        "app_mentions:read",     # React to @mentions
-        
-        # Channel history (for context)
-        "channels:history",      # Read public channel messages
-        "groups:history",        # Read private channel messages
-        "im:history",            # Read DM messages
-        "mpim:history",          # Read group DM messages
-        
-        # User & Channel info
-        "users:read",            # Get user information
-        "channels:read",         # Get channel information
-        "groups:read",           # Get private channel information
-        "team:read",             # Get workspace information
-        
-        # Channel membership (for member count)
-        "channels:join",         # Join public channels
-    ]
-    
-    # Build redirect URI
-    redirect_uri = f"{config.APP_BASE_URL}/slack/install/callback"
-    
-    # Build the OAuth URL
-    oauth_url = (
-        f"https://slack.com/oauth/v2/authorize"
-        f"?client_id={config.SLACK_CLIENT_ID}"
-        f"&scope={','.join(scopes)}"
-        f"&redirect_uri={redirect_uri}"
-    )
-    
-    return RedirectResponse(url=oauth_url)
-
-
-@app.get("/slack/install/callback")
-async def slack_callback(request: Request, code: Optional[str] = None, db: Session = Depends(get_db)):
-    """
-    Handles the Slack OAuth 2.0 redirect after a user approves the app installation.
-    This is the Redirect URL.
-    """
-    from .config import config
-    from slack_sdk.web import WebClient
-    from .utils.workspace import save_installation
-    
-    if not code:
-        # User denied installation
-        error = request.query_params.get("error", "No code received")
-        logger.error(f"❌ OAuth failed: {error}")
-        return JSONResponse(
-            content={"message": f"Installation failed. Reason: {error}"},
-            status_code=400
-        )
-
-    try:
-        # 1. Exchange the temporary code for permanent tokens
-        client = WebClient()
-        
-        # Build redirect URI - must match what's configured in Slack
-        redirect_uri = f"{config.APP_BASE_URL}/slack/install/callback"
-        
-        oauth_response = client.oauth_v2_access(
-            client_id=config.SLACK_CLIENT_ID,
-            client_secret=config.SLACK_CLIENT_SECRET,
-            code=code,
-            redirect_uri=redirect_uri,
-        )
-        
-        # 2. Extract the necessary tokens/IDs
-        team_id = oauth_response["team"]["id"]
-        team_name = oauth_response["team"]["name"]
-        bot_token = oauth_response["access_token"]
-        bot_user_id = oauth_response["bot_user_id"]
-        
-        logger.info(f"🔑 Successfully installed in Team ID: {team_id} ({team_name})")
-        
-        # 3. Save installation with encrypted token
-        save_installation(
-            db=db,
-            team_id=team_id,
-            team_name=team_name,
-            access_token=bot_token,
-            bot_user_id=bot_user_id
-        )
-        
-        # 4. Redirect to integrations dashboard (instead of simple success page)
-        # This allows user to continue with Zoho CRM connection
-        from fastapi.responses import RedirectResponse
-        dashboard_url = f"/dashboard?team_id={team_id}"
-        logger.info(f"🔄 Redirecting to dashboard: {dashboard_url}")
-        return RedirectResponse(url=dashboard_url, status_code=302)
-
-    except Exception as e:
-        logger.error(f"❌ OAuth Access Error: {e}", exc_info=True)
-        db.rollback()
-        raise HTTPException(
-            status_code=500, 
-            detail="Failed to complete app installation."
-        )
 
 
 # ============================================================================

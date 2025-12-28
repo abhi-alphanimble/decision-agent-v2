@@ -14,7 +14,7 @@ from ..utils.display import format_vote_summary, display_vote_list
 from ..models import Decision # Import Decision model for type hinting
 from ..utils import truncate_text # NEW: Import the utility function
 from ..ai.ai_client import ai_client # Import AI client
-from ..integrations.zoho_sync import sync_decision_to_zoho, sync_vote_to_zoho
+from ..integrations.zoho_sync import sync_decision_to_zoho, sync_vote_to_zoho, get_org_id_from_team_id
 
 from ..config import get_context_logger
 from ..config.config import config  # Import config for APP_BASE_URL
@@ -151,15 +151,18 @@ def handle_propose_command(
             except Exception as e:
                 logger.debug(f"Could not fetch channel name: {e}")
             
-            # Pass team_id and db for multi-tenant sync
-            zoho_synced = sync_decision_to_zoho(decision, team_id, db, channel_name)
+            # Get zoho_org_id from team_id via SlackInstallation
+            org_id = get_org_id_from_team_id(team_id, db)
+            
+            # Pass org_id and db for multi-tenant sync
+            zoho_synced = sync_decision_to_zoho(decision, org_id, db, channel_name) if org_id else False
             if zoho_synced:
                 # Mark decision as synced in database
                 decision.zoho_synced = True
                 db.commit()
-                logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM for team {team_id}")
+                logger.info(f"✅ Synced decision #{decision.id} to Zoho CRM for org {org_id}")
             else:
-                logger.info(f"ℹ️ Zoho sync skipped for decision #{decision.id} - team {team_id} has no Zoho connection")
+                logger.info(f"ℹ️ Zoho sync skipped for decision #{decision.id} - no Zoho connection for team {team_id}")
         except Exception as e:
             logger.error(f"❌ Failed to sync to Zoho: {e}", exc_info=True)
             zoho_synced = False
@@ -167,33 +170,6 @@ def handle_propose_command(
         
         # Format success message
         response_text = format_proposal_success_message(decision)
-        
-        # Auto-prompt: Show dashboard URL if Zoho not connected (first few decisions)
-        logger.info(f"🔍 Auto-prompt check: zoho_synced={zoho_synced}, decision.id={decision.id}")
-        if not zoho_synced and decision.id <= 50:  # Show for first 50 decisions during setup
-            from ..models import ZohoInstallation
-            zoho_installation = db.query(ZohoInstallation).filter(
-                ZohoInstallation.team_id == team_id
-            ).first()
-            
-            logger.info(f"🔍 Zoho installation check: zoho_installation={zoho_installation}, team_id={team_id}")
-            
-            if not zoho_installation:
-                # Team doesn't have Zoho connected - show dashboard URL
-                # DEBUG: Log the raw APP_BASE_URL value
-                import os
-                raw_env_value = os.getenv('APP_BASE_URL', 'NOT_SET')
-                logger.warning(f"🔍 DEBUG: os.getenv('APP_BASE_URL') = {repr(raw_env_value)}")
-                logger.warning(f"🔍 DEBUG: config.APP_BASE_URL = {repr(config.APP_BASE_URL)}")
-                
-                dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
-                logger.info(f"✅ Adding dashboard URL to response: {dashboard_url}")
-                response_text += f"\n\n💡 *Want to sync decisions to Zoho CRM?*\n"
-                response_text += f"Visit your integrations dashboard:\n{dashboard_url}"
-            else:
-                logger.info(f"⏭️ Zoho already connected, skipping auto-prompt")
-        else:
-            logger.info(f"⏭️ Auto-prompt skipped: zoho_synced={zoho_synced}, decision_id={decision.id}")
         
         # Send to channel using workspace-specific client (ws_client is guaranteed to exist)
         try:
@@ -441,9 +417,13 @@ def handle_approve_command(
         except Exception as e:
             logger.debug(f"Could not fetch channel name: {e}")
         
-        # Pass team_id and db for multi-tenant sync
-        sync_vote_to_zoho(updated_decision, team_id, db, channel_name)
-        logger.info(f"✅ Synced vote for decision #{decision_id} to Zoho CRM for team {team_id}")
+        # Get zoho_org_id from team_id via SlackInstallation
+        org_id = get_org_id_from_team_id(team_id, db)
+        
+        # Pass org_id and db for multi-tenant sync
+        if org_id:
+            sync_vote_to_zoho(updated_decision, org_id, db, channel_name)
+            logger.info(f"✅ Synced vote for decision #{decision_id} to Zoho CRM for org {org_id}")
     except Exception as e:
         logger.error(f"❌ Failed to sync vote to Zoho: {e}", exc_info=True)
         # Continue execution - don't fail the main operation
@@ -1639,23 +1619,34 @@ def handle_sync_zoho_command(
             "response_type": "ephemeral"
         }
     
-    # 2. Check if Zoho is connected for this team
+    # 2. Get zoho_org_id from team_id via SlackInstallation
+    org_id = get_org_id_from_team_id(team_id, db)
+    
+    if not org_id:
+        logger.warning(f"❌ Team {team_id} has no Zoho connection")
+        return {
+            "text": "❌ Zoho CRM is not connected for this workspace.\n\n"
+                    "Please connect Zoho CRM first, then reconnect Slack.",
+            "response_type": "ephemeral"
+        }
+    
+    # 3. Verify ZohoInstallation exists for this org_id
     from ..models import ZohoInstallation
     zoho_installation = db.query(ZohoInstallation).filter(
-        ZohoInstallation.team_id == team_id
+        ZohoInstallation.zoho_org_id == org_id
     ).first()
     
     if not zoho_installation:
         from ..config.config import config
-        dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
-        logger.warning(f"❌ Team {team_id} has no Zoho connection")
+        dashboard_url = f"{config.APP_BASE_URL}/dashboard?org_id={org_id}"
+        logger.warning(f"❌ Org {org_id} has no Zoho installation record")
         return {
-            "text": f"❌ Zoho CRM is not connected for this workspace.\n\n"
-                    f"Please connect Zoho CRM first:\n{dashboard_url}",
+            "text": f"❌ Zoho CRM is not properly configured for this workspace.\n\n"
+                    f"Please reconnect Zoho CRM:\n{dashboard_url}",
             "response_type": "ephemeral"
         }
     
-    # 3. Fetch only UNSYNCED decisions for this team from the database
+    # 4. Fetch only UNSYNCED decisions for this team from the database
     unsynced_decisions = db.query(Decision).filter(
         Decision.team_id == team_id,
         Decision.zoho_synced == False  # Only get unsynced decisions
@@ -1684,13 +1675,13 @@ def handle_sync_zoho_command(
             }
     
     total_to_sync = len(unsynced_decisions)
-    logger.info(f"Found {total_to_sync} unsynced decisions to sync for team {team_id} ({already_synced_count} already synced)")
+    logger.info(f"Found {total_to_sync} unsynced decisions to sync for org {org_id} ({already_synced_count} already synced)")
     
-    # 4. Get workspace-specific Slack client for channel name lookup
+    # 5. Get workspace-specific Slack client for channel name lookup
     from ..slack.client import get_client_for_team
     ws_client = get_client_for_team(team_id, db)
     
-    # 5. Sync each unsynced decision to Zoho CRM
+    # 6. Sync each unsynced decision to Zoho CRM
     synced_count = 0
     failed_count = 0
     failed_ids = []
@@ -1706,8 +1697,8 @@ def handle_sync_zoho_command(
             except Exception as e:
                 logger.debug(f"Could not fetch channel name for {decision.channel_id}: {e}")
             
-            # Sync to Zoho
-            success = sync_decision_to_zoho(decision, team_id, db, channel_name)
+            # Sync to Zoho using org_id
+            success = sync_decision_to_zoho(decision, org_id, db, channel_name)
             
             if success:
                 # Mark as synced in the database
@@ -1797,19 +1788,32 @@ def handle_connect_zoho_command(
             "response_type": "ephemeral"
         }
     
-    # 2. Generate the dashboard URL
-    from ..config.config import config
-    dashboard_url = f"{config.APP_BASE_URL}/dashboard?team_id={team_id}"
+    # 2. Get zoho_org_id from team_id via SlackInstallation
+    org_id = get_org_id_from_team_id(team_id, db)
     
-    # 3. Check if Zoho is already connected for this team
+    if not org_id:
+        logger.warning(f"❌ Team {team_id} has no Zoho connection")
+        return {
+            "text": "❌ Zoho CRM is not connected for this workspace.\n\n"
+                    "Please connect Zoho CRM first, then reconnect Slack.",
+            "response_type": "ephemeral"
+        }
+    
+    # 3. Generate the dashboard URL
+    from ..config.config import config
+    dashboard_url = f"{config.APP_BASE_URL}/dashboard?org_id={org_id}"
+    
+    # 4. Check if Zoho is already connected for this org
     from ..models import ZohoInstallation
-    zoho_installation = db.query(ZohoInstallation).filter(
-        ZohoInstallation.team_id == team_id
-    ).first()
+    zoho_installation = None
+    if org_id:
+        zoho_installation = db.query(ZohoInstallation).filter(
+            ZohoInstallation.zoho_org_id == org_id
+        ).first()
     
     if zoho_installation:
         # Zoho is already connected
-        logger.info(f"✅ Zoho already connected for team {team_id}")
+        logger.info(f"✅ Zoho already connected for org {org_id}")
         return {
             "text": f"✅ *Zoho CRM is already connected!*\n\n"
                     f"Your workspace is linked to Zoho CRM.\n\n"

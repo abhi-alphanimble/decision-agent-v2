@@ -1,8 +1,9 @@
 """
 Zoho OAuth 2.0 endpoints for multi-tenant Zoho CRM integration.
 
-This module handles the OAuth flow for connecting Slack teams to their own Zoho CRM accounts.
-Each team's credentials are stored securely in the zoho_installations table.
+This module handles the OAuth flow for connecting to Zoho CRM.
+Zoho is connected FIRST, before Slack. The zoho_org_id is the primary identifier.
+Each organization's credentials are stored securely in the zoho_installations table.
 """
 import logging
 import os
@@ -45,7 +46,7 @@ ZOHO_SCOPES = [
 # ============================================================================
 
 # In-memory cache for OAuth state nonces
-# Format: {nonce: {"team_id": str, "created_at": datetime, "expires_at": datetime}}
+# Format: {nonce: {"created_at": datetime, "expires_at": datetime}}
 _state_cache: dict[str, dict] = {}
 
 # State expiration time (15 minutes)
@@ -67,7 +68,7 @@ def _cleanup_expired_states() -> None:
         logger.debug(f"Cleaned up {len(expired_nonces)} expired state nonce(s)")
 
 
-def generate_state(team_id: str) -> str:
+def generate_state() -> str:
     """
     Generate a secure state parameter for OAuth flow with cache-based verification.
     
@@ -76,64 +77,54 @@ def generate_state(team_id: str) -> str:
     - Replay attack prevention (nonce used only once)
     - Automatic cleanup of old OAuth flows
     
-    Format: base64(team_id:random_nonce)
-    
-    Args:
-        team_id: Slack team ID
-        
     Returns:
-        Base64-encoded state string
+        Base64-encoded state string (nonce)
     """
     # Clean up expired states periodically
     _cleanup_expired_states()
     
     # Generate cryptographically secure random nonce
-    nonce = secrets.token_urlsafe(16)
+    nonce = secrets.token_urlsafe(32)
     
-    # Create state parameter
-    state_data = f"{team_id}:{nonce}"
-    state = base64.urlsafe_b64encode(state_data.encode()).decode()
+    # Create state parameter (just the nonce, no team_id needed for Zoho-first flow)
+    state = base64.urlsafe_b64encode(nonce.encode()).decode()
     
     # Store nonce in cache with expiration
     now = datetime.now(UTC)
     _state_cache[nonce] = {
-        "team_id": team_id,
         "created_at": now,
         "expires_at": now + timedelta(minutes=STATE_EXPIRATION_MINUTES)
     }
     
-    logger.debug(f"Generated state for team {team_id}, nonce: {nonce[:8]}..., expires in {STATE_EXPIRATION_MINUTES} min")
+    logger.debug(f"Generated state nonce: {nonce[:8]}..., expires in {STATE_EXPIRATION_MINUTES} min")
     
     return state
 
 
-def verify_and_consume_state(state: str) -> Optional[str]:
+def verify_and_consume_state(state: str) -> bool:
     """
     Verify state parameter and consume the nonce (one-time use).
     
     This function:
     1. Decodes the base64 state parameter
-    2. Extracts team_id and nonce
-    3. Verifies nonce exists in cache
-    4. Checks expiration
-    5. Validates team_id matches
-    6. Deletes nonce from cache (one-time use)
+    2. Verifies nonce exists in cache
+    3. Checks expiration
+    4. Deletes nonce from cache (one-time use)
     
     Args:
         state: Base64-encoded state string from OAuth callback
         
     Returns:
-        team_id if state is valid, None otherwise
+        True if state is valid, False otherwise
     """
     try:
         # Decode state parameter
-        state_data = base64.urlsafe_b64decode(state.encode()).decode()
-        team_id, nonce = state_data.split(":", 1)
+        nonce = base64.urlsafe_b64decode(state.encode()).decode()
         
         # Check if nonce exists in cache
         if nonce not in _state_cache:
             logger.warning(f"Invalid or reused nonce: {nonce[:8]}... (not found in cache)")
-            return None
+            return False
         
         cache_entry = _state_cache[nonce]
         
@@ -143,28 +134,22 @@ def verify_and_consume_state(state: str) -> Optional[str]:
             logger.warning(f"Expired nonce: {nonce[:8]}... (created at {cache_entry['created_at']})")
             # Clean up expired entry
             del _state_cache[nonce]
-            return None
-        
-        # Verify team_id matches what was stored
-        if cache_entry["team_id"] != team_id:
-            logger.error(f"Team ID mismatch! State has '{team_id}' but cache has '{cache_entry['team_id']}'")
-            # Don't delete - this could be a tampering attempt
-            return None
+            return False
         
         # Verify successful - delete nonce to prevent reuse
         del _state_cache[nonce]
         
         age_seconds = (now - cache_entry["created_at"]).total_seconds()
-        logger.info(f"✅ State verified for team {team_id}, nonce age: {age_seconds:.1f}s")
+        logger.info(f"✅ State verified, nonce age: {age_seconds:.1f}s")
         
-        return team_id
+        return True
         
     except ValueError as e:
         logger.error(f"Malformed state parameter: {e}")
-        return None
+        return False
     except Exception as e:
         logger.error(f"Failed to verify state: {e}", exc_info=True)
-        return None
+        return False
 
 
 def get_cache_stats() -> dict:
@@ -190,18 +175,15 @@ def get_cache_stats() -> dict:
 
 
 @router.get("/zoho/install")
-async def zoho_install(request: Request, team_id: str):
+async def zoho_install(request: Request):
     """
     Initiate Zoho OAuth flow.
     
     Redirects user to Zoho authorization page.
-    The team_id is passed through the OAuth flow via the state parameter.
+    This is the FIRST step - Zoho connects before Slack.
     
-    Query parameters:
-        team_id: Slack team ID (required)
-        
     Example:
-        GET /zoho/install?team_id=T123456
+        GET /zoho/install
     """
     if not ZOHO_CLIENT_ID or not ZOHO_CLIENT_SECRET:
         logger.error("Zoho OAuth credentials not configured")
@@ -210,14 +192,8 @@ async def zoho_install(request: Request, team_id: str):
             detail="Zoho OAuth is not configured on this server"
         )
     
-    if not team_id:
-        raise HTTPException(
-            status_code=400,
-            detail="team_id parameter is required"
-        )
-    
     # Generate state for CSRF protection
-    state = generate_state(team_id)
+    state = generate_state()
     
     # Build redirect URI
     redirect_uri = f"{config.APP_BASE_URL}/zoho/install/callback"
@@ -234,9 +210,8 @@ async def zoho_install(request: Request, team_id: str):
         f"&prompt=consent"  # Force consent screen to ensure refresh token
     )
     
-    logger.info(f"Initiating Zoho OAuth for team {team_id}")
+    logger.info("Initiating Zoho OAuth flow")
     logger.info(f"Using Redirect URI: {redirect_uri}")
-    logger.info(f"Generated Auth URL: {auth_url}")
     return RedirectResponse(url=auth_url)
 
 
@@ -256,9 +231,12 @@ async def zoho_install_callback(
     This is called by Zoho after user approves/denies the authorization.
     Exchanges the authorization code for access and refresh tokens, then stores them.
     
+    This is the FIRST step in the connection flow - Zoho connects before Slack.
+    After successful connection, redirects to dashboard with org_id.
+    
     Query parameters (from Zoho):
         code: Authorization code
-        state: State parameter (contains team_id)
+        state: State parameter (CSRF protection)
         error: Error code if authorization failed
         error_description: Human-readable error description
         location: Zoho data center location
@@ -268,8 +246,8 @@ async def zoho_install_callback(
         logger.error(f"Zoho OAuth error: {error} - {error_description}")
         return HTMLResponse(
             content=ZOHO_ERROR_PAGE_HTML.format(
-                error=error,
-                error_description=error_description or "No description provided"
+                error_message=f"{error}: {error_description or 'No description provided'}",
+                retry_url="/dashboard"
             ),
             status_code=400
         )
@@ -279,8 +257,8 @@ async def zoho_install_callback(
         logger.error("No authorization code received")
         return HTMLResponse(
             content=ZOHO_ERROR_PAGE_HTML.format(
-                error="missing_code",
-                error_description="No authorization code received from Zoho"
+                error_message="No authorization code received from Zoho",
+                retry_url="/dashboard"
             ),
             status_code=400
         )
@@ -289,44 +267,28 @@ async def zoho_install_callback(
         logger.error("No state parameter received")
         return HTMLResponse(
             content=ZOHO_ERROR_PAGE_HTML.format(
-                error="missing_state",
-                error_description="No state parameter received (CSRF protection)"
+                error_message="No state parameter received (CSRF protection)",
+                retry_url="/dashboard"
             ),
             status_code=400
         )
     
     # Verify and consume state (CSRF protection with cache validation)
-    team_id = verify_and_consume_state(state)
-    if not team_id:
+    if not verify_and_consume_state(state):
         logger.error("State verification failed - invalid, expired, or reused nonce")
         return HTMLResponse(
             content=ZOHO_ERROR_PAGE_HTML.format(
-                error="invalid_state",
-                error_description="State verification failed. The OAuth flow may have expired or been tampered with. Please try again."
+                error_message="State verification failed. The OAuth flow may have expired or been tampered with. Please try again.",
+                retry_url="/dashboard"
             ),
             status_code=400
-        )
-    
-    # Verify that the team exists in our database
-    slack_installation = db.query(SlackInstallation).filter(
-        SlackInstallation.team_id == team_id
-    ).first()
-    
-    if not slack_installation:
-        logger.error(f"Team {team_id} not found in database")
-        return HTMLResponse(
-            content=ZOHO_ERROR_PAGE_HTML.format(
-                error="team_not_found",
-                error_description=f"Slack team {team_id} is not installed"
-            ),
-            status_code=404
         )
     
     # Exchange authorization code for tokens
     redirect_uri = f"{config.APP_BASE_URL}/zoho/install/callback"
     
     try:
-        logger.info(f"Exchanging code for tokens (team: {team_id})")
+        logger.info("Exchanging code for tokens")
         token_response = requests.post(
             f"{ZOHO_ACCOUNTS_URL}/oauth/v2/token",
             data={
@@ -343,8 +305,8 @@ async def zoho_install_callback(
             logger.error(f"Token exchange failed: {token_response.status_code} - {token_response.text}")
             return HTMLResponse(
                 content=ZOHO_ERROR_PAGE_HTML.format(
-                    error="token_exchange_failed",
-                    error_description=f"Failed to exchange code for tokens: {token_response.text}"
+                    error_message=f"Failed to exchange code for tokens: {token_response.text}",
+                    retry_url="/dashboard"
                 ),
                 status_code=500
             )
@@ -358,13 +320,13 @@ async def zoho_install_callback(
             logger.error(f"Missing tokens in response: {token_data}")
             return HTMLResponse(
                 content=ZOHO_ERROR_PAGE_HTML.format(
-                    error="incomplete_tokens",
-                    error_description="Zoho did not return all required tokens"
+                    error_message="Zoho did not return all required tokens",
+                    retry_url="/dashboard"
                 ),
                 status_code=500
             )
         
-        # Fetch Zoho organization info
+        # Fetch Zoho organization info - THIS IS REQUIRED for zoho_org_id
         zoho_org_id = None
         zoho_domain = location or "com"  # Default to .com if not provided
         
@@ -378,8 +340,19 @@ async def zoho_install_callback(
                 org_data = org_response.json()
                 if org_data.get("org"):
                     zoho_org_id = org_data["org"][0].get("zgid")
+                    logger.info(f"Fetched Zoho organization ID: {zoho_org_id}")
         except Exception as e:
             logger.warning(f"Could not fetch Zoho org info: {e}")
+        
+        if not zoho_org_id:
+            logger.error("Could not fetch Zoho organization ID - this is required")
+            return HTMLResponse(
+                content=ZOHO_ERROR_PAGE_HTML.format(
+                    error_message="Could not fetch Zoho organization ID. Please ensure you have CRM access.",
+                    retry_url="/dashboard"
+                ),
+                status_code=500
+            )
         
         # Encrypt tokens before storage
         encrypted_access_token = encrypt_token(access_token)
@@ -388,15 +361,14 @@ async def zoho_install_callback(
         # Calculate token expiry
         token_expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
         
-        # Store or update installation
+        # Store or update installation (keyed by zoho_org_id)
         existing = db.query(ZohoInstallation).filter(
-            ZohoInstallation.team_id == team_id
+            ZohoInstallation.zoho_org_id == zoho_org_id
         ).first()
         
         if existing:
             # Update existing installation
-            logger.info(f"Updating existing Zoho installation for team {team_id}")
-            existing.zoho_org_id = zoho_org_id
+            logger.info(f"Updating existing Zoho installation for org {zoho_org_id}")
             existing.zoho_domain = zoho_domain
             existing.access_token = encrypted_access_token
             existing.refresh_token = encrypted_refresh_token
@@ -404,9 +376,8 @@ async def zoho_install_callback(
             existing.installed_at = datetime.now(UTC)
         else:
             # Create new installation
-            logger.info(f"Creating new Zoho installation for team {team_id}")
+            logger.info(f"Creating new Zoho installation for org {zoho_org_id}")
             new_installation = ZohoInstallation(
-                team_id=team_id,
                 zoho_org_id=zoho_org_id,
                 zoho_domain=zoho_domain,
                 access_token=encrypted_access_token,
@@ -417,28 +388,26 @@ async def zoho_install_callback(
             db.add(new_installation)
         
         db.commit()
-        logger.info(f"✅ Zoho connected successfully for team {team_id}")
+        logger.info(f"✅ Zoho connected successfully for org {zoho_org_id}")
         
         # Initialize the Decisions module and fields for this organization
         module_status = "initialized"
         try:
             from .zoho_crm import ZohoCRMClient
-            zoho_client = ZohoCRMClient(team_id, db)
+            zoho_client = ZohoCRMClient(zoho_org_id, db)
             if zoho_client.create_decision_module():
-                logger.info(f"✅ Decisions module initialized for team {team_id}")
+                logger.info(f"✅ Decisions module initialized for org {zoho_org_id}")
                 module_status = "initialized"
             else:
-                logger.warning(f"⚠️ Module creation had issues for team {team_id}")
+                logger.warning(f"⚠️ Module creation had issues for org {zoho_org_id}")
                 module_status = "partial"
         except Exception as e:
-            logger.error(f"❌ Failed to initialize module for team {team_id}: {e}", exc_info=True)
+            logger.error(f"❌ Failed to initialize module for org {zoho_org_id}: {e}", exc_info=True)
             module_status = "error"
             # Don't fail the entire OAuth - user is already connected
         
-        # Redirect to dashboard (instead of showing separate success page)
-        # This keeps both integrations on the same dashboard page
-        team_name = slack_installation.team_name or team_id
-        dashboard_url = f"/dashboard?team_id={team_id}"
+        # Redirect to dashboard with org_id
+        dashboard_url = f"/dashboard?org_id={zoho_org_id}"
         logger.info(f"🔄 Redirecting to dashboard: {dashboard_url}")
         return RedirectResponse(url=dashboard_url, status_code=302)
         
@@ -446,8 +415,8 @@ async def zoho_install_callback(
         logger.error(f"Request error during token exchange: {e}", exc_info=True)
         return HTMLResponse(
             content=ZOHO_ERROR_PAGE_HTML.format(
-                error="network_error",
-                error_description=f"Network error: {str(e)}"
+                error_message=f"Network error: {str(e)}",
+                retry_url="/dashboard"
             ),
             status_code=500
         )
@@ -456,40 +425,40 @@ async def zoho_install_callback(
         db.rollback()
         return HTMLResponse(
             content=ZOHO_ERROR_PAGE_HTML.format(
-                error="internal_error",
-                error_description=f"Internal error: {str(e)}"
+                error_message=f"Internal error: {str(e)}",
+                retry_url="/dashboard"
             ),
             status_code=500
         )
 
 
 @router.get("/zoho/status")
-async def zoho_status(team_id: str, db: Session = Depends(get_db)):
+async def zoho_status(org_id: str, db: Session = Depends(get_db)):
     """
-    Check Zoho connection status for a team.
+    Check Zoho connection status for an organization.
     
     Query parameters:
-        team_id: Slack team ID
+        org_id: Zoho organization ID
         
     Returns:
         JSON with connection status
         
     Example:
-        GET /zoho/status?team_id=T123456
+        GET /zoho/status?org_id=123456789
     """
-    if not team_id:
-        raise HTTPException(status_code=400, detail="team_id parameter required")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="org_id parameter required")
     
     installation = db.query(ZohoInstallation).filter(
-        ZohoInstallation.team_id == team_id
+        ZohoInstallation.zoho_org_id == org_id
     ).first()
     
     if not installation:
         return JSONResponse(
             content={
                 "connected": False,
-                "team_id": team_id,
-                "message": "Zoho CRM is not connected for this team"
+                "org_id": org_id,
+                "message": "Zoho CRM is not connected for this organization"
             }
         )
     
@@ -503,15 +472,22 @@ async def zoho_status(team_id: str, db: Session = Depends(get_db)):
             token_expires = token_expires.replace(tzinfo=UTC)
         is_expired = datetime.now(UTC) >= token_expires
     
+    # Check if Slack is connected
+    slack_install = db.query(SlackInstallation).filter(
+        SlackInstallation.zoho_org_id == org_id
+    ).first()
+    
     return JSONResponse(
         content={
             "connected": True,
-            "team_id": team_id,
-            "zoho_org_id": installation.zoho_org_id,
+            "org_id": org_id,
             "zoho_domain": installation.zoho_domain,
             "installed_at": installation.installed_at.isoformat(),
             "token_expired": is_expired,
             "token_expires_at": installation.token_expires_at.isoformat() if installation.token_expires_at else None,
+            "slack_connected": slack_install is not None,
+            "slack_team_id": slack_install.team_id if slack_install else None,
+            "slack_team_name": slack_install.team_name if slack_install else None,
             "message": "Zoho CRM is connected"
         }
     )
@@ -520,73 +496,75 @@ async def zoho_status(team_id: str, db: Session = Depends(get_db)):
 @router.post("/zoho/disconnect")
 async def zoho_disconnect(request: Request, db: Session = Depends(get_db)):
     """
-    Disconnect Zoho CRM for a team.
+    Disconnect Zoho CRM for an organization.
+    
+    WARNING: This will also delete the linked Slack installation due to cascade.
     
     Accepts either:
-    - Form data: team_id field
-    - JSON body: {"team_id": "T123456"}
-    - Query param: ?team_id=T123456
+    - Form data: org_id field
+    - JSON body: {"org_id": "123456789"}
+    - Query param: ?org_id=123456789
         
     Returns:
         JSON with success/error message or redirect to dashboard
     """
     try:
-        # Try to get team_id from multiple sources
-        team_id = None
+        # Try to get org_id from multiple sources
+        org_id = None
         
         # 1. Try query params first
-        team_id = request.query_params.get("team_id")
+        org_id = request.query_params.get("org_id")
         
         # 2. Try form data
-        if not team_id:
+        if not org_id:
             try:
                 form_data = await request.form()
-                team_id = form_data.get("team_id")
+                org_id = form_data.get("org_id")
             except Exception:
                 pass
         
         # 3. Try JSON body
-        if not team_id:
+        if not org_id:
             try:
                 body = await request.body()
                 if body:
                     import json
                     data = json.loads(body)
-                    team_id = data.get("team_id")
+                    org_id = data.get("org_id")
             except Exception:
                 pass
         
-        if not team_id:
-            raise HTTPException(status_code=400, detail="team_id is required")
+        if not org_id:
+            raise HTTPException(status_code=400, detail="org_id is required")
         
         installation = db.query(ZohoInstallation).filter(
-            ZohoInstallation.team_id == team_id
+            ZohoInstallation.zoho_org_id == org_id
         ).first()
         
         if not installation:
             return JSONResponse(
                 content={
                     "success": False,
-                    "message": f"No Zoho connection found for team {team_id}"
+                    "message": f"No Zoho connection found for org {org_id}"
                 },
                 status_code=404
             )
         
-        # Delete the installation
+        # Delete the installation (cascades to Slack and related data)
         db.delete(installation)
         db.commit()
         
-        logger.info(f"Zoho disconnected for team {team_id}")
+        logger.info(f"Zoho disconnected for org {org_id}")
         
         # Check if this was a form submission (browser) or API call
         content_type = request.headers.get("content-type", "")
         accept = request.headers.get("accept", "")
         
-        # If it's a form submission, redirect to dashboard
+        # If it's a form submission, redirect to dashboard (fresh start)
         if "form" in content_type or "text/html" in accept:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(
-                url=f"/dashboard?team_id={team_id}",
+                url="/dashboard",
                 status_code=303  # See Other - proper redirect after POST
             )
         
@@ -594,7 +572,7 @@ async def zoho_disconnect(request: Request, db: Session = Depends(get_db)):
         return JSONResponse(
             content={
                 "success": True,
-                "message": f"Zoho CRM disconnected for team {team_id}"
+                "message": f"Zoho CRM disconnected for org {org_id}"
             }
         )
         

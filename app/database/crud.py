@@ -787,7 +787,7 @@ def get_or_create_ai_limits(db: Session, team_id: str, month_year: str = None) -
     
     Args:
         db: Database session
-        team_id: Slack team ID
+        team_id: Slack team ID (will be converted to zoho_org_id internally)
         month_year: Month in YYYY-MM format (defaults to current month)
     
     Returns:
@@ -798,17 +798,35 @@ def get_or_create_ai_limits(db: Session, team_id: str, month_year: str = None) -
     if month_year is None:
         month_year = get_current_month_year()
     
+    # Convert team_id to zoho_org_id via SlackInstallation
+    from ..models import SlackInstallation
+    slack_install = db.query(SlackInstallation).filter(
+        SlackInstallation.team_id == team_id
+    ).first()
+    
+    if not slack_install or not slack_install.zoho_org_id:
+        logger.warning(f"⚠️ No Zoho connection found for team {team_id}, returning default AI limits")
+        # Return non-persisted default (not saved to DB since no zoho_org_id)
+        return OrganizationAILimits(
+            zoho_org_id="",  # Empty but allows object to be created
+            month_year=month_year,
+            monthly_limit=DEFAULT_AI_MONTHLY_LIMIT,
+            command_count=0
+        )
+    
+    zoho_org_id = slack_install.zoho_org_id
+    
     try:
         record = db.query(OrganizationAILimits).filter(
-            OrganizationAILimits.team_id == team_id,
+            OrganizationAILimits.zoho_org_id == zoho_org_id,
             OrganizationAILimits.month_year == month_year
         ).first()
         
         if record is None:
             # Create new record for this month with default limit
-            logger.info(f"📝 Creating AI limits record for team {team_id} month {month_year}")
+            logger.info(f"📝 Creating AI limits record for org {zoho_org_id} month {month_year}")
             record = OrganizationAILimits(
-                team_id=team_id,
+                zoho_org_id=zoho_org_id,
                 month_year=month_year,
                 monthly_limit=DEFAULT_AI_MONTHLY_LIMIT,
                 command_count=0
@@ -816,7 +834,7 @@ def get_or_create_ai_limits(db: Session, team_id: str, month_year: str = None) -
             db.add(record)
             db.commit()
             db.refresh(record)
-            logger.info(f"✅ Created AI limits for team {team_id}: 0/{DEFAULT_AI_MONTHLY_LIMIT}")
+            logger.info(f"✅ Created AI limits for org {zoho_org_id}: 0/{DEFAULT_AI_MONTHLY_LIMIT}")
         
         return record
     except Exception as e:
@@ -824,7 +842,7 @@ def get_or_create_ai_limits(db: Session, team_id: str, month_year: str = None) -
         db.rollback()
         # Return non-persisted default
         return OrganizationAILimits(
-            team_id=team_id,
+            zoho_org_id=zoho_org_id,
             month_year=month_year,
             monthly_limit=DEFAULT_AI_MONTHLY_LIMIT,
             command_count=0
@@ -874,6 +892,12 @@ def increment_ai_usage(db: Session, team_id: str) -> Tuple[int, int]:
     """
     try:
         record = get_or_create_ai_limits(db, team_id)
+        
+        # If record has no zoho_org_id, it's a non-persisted default
+        # (no Zoho connection for this team)
+        if not record.zoho_org_id:
+            logger.warning(f"⚠️ Cannot increment AI usage for team {team_id} - no Zoho connection")
+            return record.command_count, record.monthly_limit
         
         # Increment count
         record.command_count += 1
@@ -955,6 +979,12 @@ def update_organization_ai_limit(
     
     try:
         record = get_or_create_ai_limits(db, team_id)
+        
+        # If record has no zoho_org_id, it's a non-persisted default
+        if not record.zoho_org_id:
+            logger.warning(f"⚠️ Cannot update AI limit for team {team_id} - no Zoho connection")
+            return None
+        
         old_limit = record.monthly_limit
         record.monthly_limit = new_limit
         

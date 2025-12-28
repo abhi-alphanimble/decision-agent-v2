@@ -1,13 +1,19 @@
 """
-Zoho Integration Dashboard Routes
+Integration Dashboard Routes
 
-Provides a web-based interface for managing Slack and Zoho CRM connections.
-Supports both connected and not-connected states for Slack.
+Provides a web-based interface for managing Zoho CRM and Slack connections.
+Flow: Connect Zoho CRM FIRST, then Slack.
+Uses org_id (zoho_org_id) as the primary identifier.
+
+Supports embedding in Zoho CRM Web Tab:
+- URL: /dashboard?orgId=${zoho.org.organization_id}
+- Allows iframe embedding from Zoho domains
 """
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
+from starlette.responses import Response
 from sqlalchemy.orm import Session
 
 from ..dependencies import get_db
@@ -23,47 +29,29 @@ logger = logging.getLogger(__name__)
 # Create router
 dashboard_router = APIRouter(prefix="", tags=["dashboard"])
 
+# Zoho domains that can embed this dashboard in an iframe
+ZOHO_FRAME_ANCESTORS = (
+    "https://*.zoho.com https://*.zoho.in https://*.zoho.eu "
+    "https://*.zoho.com.au https://*.zoho.jp https://*.zoho.com.cn "
+    "https://*.zohocrm.com https://*.zohocrm.in https://*.zohocrm.eu "
+    "https://*.zohocrm.com.au https://*.zohocrm.jp https://*.zohocrm.com.cn "
+    "https://*.zohosandbox.com https://*.zohoplatform.com"
+)
 
-def build_slack_oauth_url() -> str:
+
+def build_slack_oauth_url(org_id: str) -> str:
     """
     Build the Slack OAuth URL for connecting Slack.
-    Uses the shareable URL format with all required scopes.
+    Includes org_id in state for linking to Zoho organization.
     """
-    scopes = [
-        "app_mentions:read",
-        "channels:history", 
-        "chat:write",
-        "commands",
-        "groups:history",
-        "im:history",
-        "mpim:history",
-        "chat:write.public",
-        "users:read",
-        "channels:read",
-        "groups:read",
-        "team:read",
-        "channels:join",
-        "mpim:read"
-    ]
-    
-    # Build redirect URI - after OAuth, redirect back to dashboard
-    redirect_uri = f"{config.APP_BASE_URL}/slack/install/callback"
-    
-    oauth_url = (
-        f"https://slack.com/oauth/v2/authorize"
-        f"?client_id={config.SLACK_CLIENT_ID}"
-        f"&scope={','.join(scopes)}"
-        f"&redirect_uri={redirect_uri}"
-        f"&user_scope="
-    )
-    
-    return oauth_url
+    # The actual OAuth URL is built in the slack_install endpoint
+    # This just returns the install endpoint URL with org_id
+    return f"/slack/install?org_id={org_id}"
 
 
 def build_slack_success_html(team_name: str) -> str:
     """
     Build the Slack success message HTML shown when Slack is connected.
-    Minimal style with light colors.
     """
     return f"""
         <div class="success-card success-card-slack">
@@ -82,10 +70,9 @@ def build_slack_success_html(team_name: str) -> str:
     """
 
 
-def build_zoho_success_html(team_name: str) -> str:
+def build_zoho_success_html(org_id: str) -> str:
     """
     Build the Zoho CRM success message HTML shown when Zoho is connected.
-    Minimal style with light colors.
     """
     return f"""
         <div class="success-card success-card-zoho">
@@ -93,7 +80,7 @@ def build_zoho_success_html(team_name: str) -> str:
                 <span class="success-icon">✓</span>
                 <span class="success-title">Zoho CRM Connected</span>
             </div>
-            <div class="success-subtitle">Connected to team: <strong>{team_name}</strong></div>
+            <div class="success-subtitle">Organization ID: <strong>{org_id}</strong></div>
             <div class="success-features">
                 <div class="success-feature">
                     <span class="success-feature-icon">🔄</span>
@@ -105,7 +92,7 @@ def build_zoho_success_html(team_name: str) -> str:
                 </div>
                 <div class="success-feature">
                     <span class="success-feature-icon">👥</span>
-                    <span>Team-wide integration</span>
+                    <span>Organization-wide integration</span>
                 </div>
             </div>
         </div>
@@ -114,131 +101,53 @@ def build_zoho_success_html(team_name: str) -> str:
 
 @dashboard_router.get("/dashboard", response_class=HTMLResponse)
 async def show_dashboard(
-    team_id: Optional[str] = Query(None, description="Slack team ID (optional - if not provided, shows Slack connection button)"),
+    orgId: Optional[str] = Query(None, description="Zoho organization ID (camelCase for Zoho Web Tab)"),
+    org_id: Optional[str] = Query(None, description="Zoho organization ID (snake_case for OAuth flow)"),
     db: Session = Depends(get_db)
 ):
     """
-    Show integrations dashboard for a team.
+    Show integrations dashboard.
     
-    Two modes:
-    1. Without team_id: Shows "Connect to Slack" button, Zoho CRM disabled
-    2. With team_id: Shows Slack as connected, Zoho CRM connection available
+    Supports two URL formats:
+    - /dashboard?orgId=xxx (Zoho CRM Web Tab format)
+    - /dashboard?org_id=xxx (OAuth redirect format)
     
-    Displays:
-    - Slack connection status (connected or not)
-    - Zoho CRM connection status
+    Flow:
+    1. Without org_id: Shows "Connect to Zoho CRM" button, Slack disabled
+    2. With org_id: Shows Zoho as connected, Slack connection available
+    
+    Displays (in order):
+    - Zoho CRM connection status (connect FIRST)
+    - Slack connection status (connect SECOND, after Zoho)
     - Success messages below each card when connected
-    - Buttons to connect/disconnect integrations
     """
+    # Support both orgId (Zoho Web Tab) and org_id (OAuth flow)
+    # orgId takes precedence if both are provided
+    effective_org_id = orgId or org_id
+    
     try:
-        # Initialize success HTML variables
+        # Initialize variables
         slack_success_html = ""
         zoho_success_html = ""
+        org_name = "Not Connected"
         
         # =====================================================================
-        # SLACK SECTION - Dynamic based on team_id presence
+        # ZOHO CRM SECTION - FIRST (Primary connection)
         # =====================================================================
         
-        if team_id:
-            # team_id provided - check if Slack is actually installed
-            slack_install = db.query(SlackInstallation).filter(
-                SlackInstallation.team_id == team_id
-            ).first()
-            
-            if slack_install:
-                # Slack IS connected
-                team_name = slack_install.team_name or team_id
-                slack_status_class = "status-connected"
-                slack_status_text = "Connected"
-                slack_description = "Your Slack workspace is connected to Decision Agent."
-                
-                slack_info_html = f"""
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">Status</span>
-                            <span class="info-value">✅ Active</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Team ID</span>
-                            <span class="info-value">{team_id}</span>
-                        </div>
-                    </div>
-                """
-                
-                # No action button when connected (or could add disconnect option later)
-                slack_action_button = ""
-                
-                # Build Slack success message HTML
-                slack_success_html = build_slack_success_html(team_name)
-                
-            else:
-                # team_id provided but Slack not found - treat as not connected
-                team_name = "Not Connected"
-                slack_status_class = "status-disconnected"
-                slack_status_text = "Not Connected"
-                slack_description = "Connect your Slack workspace to get started with Decision Agent."
-                
-                slack_info_html = """
-                    <div class="alert alert-info">
-                        <span class="alert-icon">💡</span>
-                        <div>
-                            <strong>Why connect Slack?</strong><br>
-                            Decision Agent helps your team make decisions collaboratively in Slack. 
-                            Connect your workspace to start using slash commands for proposing and voting on decisions.
-                        </div>
-                    </div>
-                """
-                
-                slack_oauth_url = build_slack_oauth_url()
-                slack_action_button = f'<a href="{slack_oauth_url}" class="btn btn-primary">Connect to Slack</a>'
-                
-                # No success message when not connected
-                slack_success_html = ""
-        else:
-            # No team_id - Slack not connected yet
-            team_name = "Not Connected"
-            slack_status_class = "status-disconnected"
-            slack_status_text = "Not Connected"
-            slack_description = "Connect your Slack workspace to get started with Decision Agent."
-            
-            slack_info_html = """
-                <div class="alert alert-info">
-                    <span class="alert-icon">💡</span>
-                    <div>
-                        <strong>Why connect Slack?</strong><br>
-                        Decision Agent helps your team make decisions collaboratively in Slack. 
-                        Connect your workspace to start using slash commands for proposing and voting on decisions.
-                    </div>
-                </div>
-            """
-            
-            slack_oauth_url = build_slack_oauth_url()
-            slack_action_button = f'<a href="{slack_oauth_url}" class="btn btn-primary">Connect to Slack</a>'
-            
-            # No success message when not connected
-            slack_success_html = ""
-        
-        # =====================================================================
-        # ZOHO CRM SECTION - Only enabled when Slack is connected
-        # =====================================================================
-        
-        slack_is_connected = team_id and db.query(SlackInstallation).filter(
-            SlackInstallation.team_id == team_id
-        ).first() is not None
-        
-        if slack_is_connected:
-            # Check Zoho installation
+        if effective_org_id:
+            # org_id provided - check if Zoho is actually connected
             zoho_install = db.query(ZohoInstallation).filter(
-                ZohoInstallation.team_id == team_id
+                ZohoInstallation.zoho_org_id == effective_org_id
             ).first()
             
             if zoho_install:
-                # Zoho is connected
+                # Zoho IS connected
+                org_name = f"Org: {effective_org_id}"
                 zoho_status_class = "status-connected"
                 zoho_status_text = "Connected"
-                zoho_description = "Your team's Zoho CRM is connected. All decisions will sync automatically."
+                zoho_description = "Your Zoho CRM is connected. Decisions will sync automatically."
                 
-                # Show Zoho info
                 zoho_info_html = f"""
                     <div class="info-grid">
                         <div class="info-item">
@@ -246,8 +155,8 @@ async def show_dashboard(
                             <span class="info-value">✅ Active</span>
                         </div>
                         <div class="info-item">
-                            <span class="info-label">Zoho Organization</span>
-                            <span class="info-value">{zoho_install.zoho_org_id or 'N/A'}</span>
+                            <span class="info-label">Organization ID</span>
+                            <span class="info-value">{effective_org_id}</span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">Data Center</span>
@@ -260,118 +169,202 @@ async def show_dashboard(
                     </div>
                 """
                 
-                # Disconnect button
+                # Disconnect button - opens in new tab to avoid iframe issues
                 zoho_action_button = f"""
-                    <form action="/zoho/disconnect" method="post" onsubmit="return confirm('Are you sure you want to disconnect Zoho CRM? Decisions will no longer sync.');">
-                        <input type="hidden" name="team_id" value="{team_id}">
+                    <form action="/zoho/disconnect" method="post" target="_blank" target="_blank" onsubmit="return confirm('Are you sure you want to disconnect Zoho CRM? This will also disconnect Slack and delete all data.');">
+                        <input type="hidden" name="org_id" value="{effective_org_id}">
                         <button type="submit" class="btn btn-danger">Disconnect Zoho CRM</button>
                     </form>
                 """
                 
-                alert_html = ""
-                
-                # Build Zoho success message HTML
-                zoho_success_html = build_zoho_success_html(team_name)
-                
+                zoho_success_html = build_zoho_success_html(effective_org_id)
             else:
-                # Zoho is NOT connected, but Slack is
+                # org_id provided but not found - treat as not connected
                 zoho_status_class = "status-disconnected"
                 zoho_status_text = "Not Connected"
-                zoho_description = "Connect your Zoho CRM to automatically sync all team decisions."
+                zoho_description = "Connect your Zoho CRM to get started with Decision Agent."
                 
                 zoho_info_html = """
                     <div class="alert alert-info">
                         <span class="alert-icon">💡</span>
                         <div>
                             <strong>Why connect Zoho CRM?</strong><br>
-                            Automatically sync all decisions and votes to your Zoho CRM account. 
+                            Decision Agent syncs all team decisions to your Zoho CRM. 
                             Track decision-making progress alongside your business data.
                         </div>
                     </div>
                 """
                 
-                # Connect button
-                connect_url = f"/zoho/install?team_id={team_id}"
-                zoho_action_button = f'<a href="{connect_url}" class="btn btn-primary">Connect Zoho CRM</a>'
-                
-                # Show alert on dashboard
-                alert_html = """
-                    <div class="alert alert-warning">
-                        <span class="alert-icon">⚠️</span>
-                        <div>
-                            <strong>Zoho CRM not connected</strong><br>
-                            Connect your Zoho CRM below to start syncing decisions automatically.
-                        </div>
-                    </div>
-                """
-                
-                # No Zoho success message when not connected
+                zoho_action_button = '<a href="/zoho/install" class="btn btn-primary" target="_blank">Connect Zoho CRM</a>'
                 zoho_success_html = ""
         else:
-            # Slack is NOT connected - disable Zoho CRM section
+            # No org_id - Zoho not connected yet
             zoho_status_class = "status-disconnected"
-            zoho_status_text = "Not Available"
-            zoho_description = "Connect Slack first to enable Zoho CRM integration."
+            zoho_status_text = "Not Connected"
+            zoho_description = "Connect your Zoho CRM to get started with Decision Agent."
             
             zoho_info_html = """
                 <div class="alert alert-info">
-                    <span class="alert-icon">🔒</span>
+                    <span class="alert-icon">💡</span>
                     <div>
-                        <strong>Slack connection required</strong><br>
-                        You need to connect your Slack workspace first before connecting Zoho CRM.
+                        <strong>Why connect Zoho CRM?</strong><br>
+                        Decision Agent syncs all team decisions to your Zoho CRM. 
+                        Track decision-making progress alongside your business data.
                     </div>
                 </div>
             """
             
-            # Disabled button
-            zoho_action_button = '<button class="btn btn-disabled" disabled>Connect Zoho CRM</button>'
+            zoho_action_button = '<a href="/zoho/install" class="btn btn-primary" target="_blank">Connect Zoho CRM</a>'
+            zoho_success_html = ""
+        
+        # =====================================================================
+        # SLACK SECTION - SECOND (Requires Zoho to be connected first)
+        # =====================================================================
+        
+        zoho_is_connected = effective_org_id and db.query(ZohoInstallation).filter(
+            ZohoInstallation.zoho_org_id == effective_org_id
+        ).first() is not None
+        
+        if zoho_is_connected:
+            # Check Slack installation linked to this Zoho org
+            slack_install = db.query(SlackInstallation).filter(
+                SlackInstallation.zoho_org_id == effective_org_id
+            ).first()
             
-            # Show alert to connect Slack first
+            if slack_install:
+                # Slack IS connected
+                team_name = slack_install.team_name or slack_install.team_id
+                slack_status_class = "status-connected"
+                slack_status_text = "Connected"
+                slack_description = "Your Slack workspace is connected to Decision Agent."
+                
+                slack_info_html = f"""
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Status</span>
+                            <span class="info-value">✅ Active</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Workspace</span>
+                            <span class="info-value">{team_name}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Team ID</span>
+                            <span class="info-value">{slack_install.team_id}</span>
+                        </div>
+                    </div>
+                """
+                
+                slack_action_button = ""  # No disconnect for Slack (disconnecting Zoho removes everything)
+                slack_success_html = build_slack_success_html(team_name)
+                
+                alert_html = ""  # All connected, no alerts
+                
+            else:
+                # Slack is NOT connected, but Zoho is
+                slack_status_class = "status-disconnected"
+                slack_status_text = "Not Connected"
+                slack_description = "Connect your Slack workspace to start using Decision Agent."
+                
+                slack_info_html = """
+                    <div class="alert alert-info">
+                        <span class="alert-icon">💡</span>
+                        <div>
+                            <strong>Why connect Slack?</strong><br>
+                            Decision Agent helps your team make decisions collaboratively in Slack. 
+                            Connect your workspace to start using slash commands.
+                        </div>
+                    </div>
+                """
+                
+                slack_oauth_url = build_slack_oauth_url(effective_org_id)
+                slack_action_button = f'<a href="{slack_oauth_url}" class="btn btn-primary" target="_blank">Connect to Slack</a>'
+                slack_success_html = ""
+                
+                # Show alert to connect Slack
+                alert_html = """
+                    <div class="alert alert-warning">
+                        <span class="alert-icon">⚠️</span>
+                        <div>
+                            <strong>Slack not connected</strong><br>
+                            Connect your Slack workspace below to start using Decision Agent.
+                        </div>
+                    </div>
+                """
+        else:
+            # Zoho is NOT connected - disable Slack section
+            slack_status_class = "status-disconnected"
+            slack_status_text = "Not Available"
+            slack_description = "Connect Zoho CRM first to enable Slack integration."
+            
+            slack_info_html = """
+                <div class="alert alert-info">
+                    <span class="alert-icon">🔒</span>
+                    <div>
+                        <strong>Zoho CRM connection required</strong><br>
+                        You need to connect your Zoho CRM first before connecting Slack.
+                    </div>
+                </div>
+            """
+            
+            slack_action_button = '<button class="btn btn-disabled" disabled>Connect to Slack</button>'
+            slack_success_html = ""
+            
+            # Show welcome alert
             alert_html = """
                 <div class="alert alert-warning">
                     <span class="alert-icon">👋</span>
                     <div>
                         <strong>Welcome to Decision Agent!</strong><br>
-                        Please connect your Slack workspace first to get started.
+                        Please connect your Zoho CRM first to get started.
                     </div>
                 </div>
             """
-            
-            # No Zoho success message when Slack not connected
-            zoho_success_html = ""
         
         # =====================================================================
         # RENDER DASHBOARD
         # =====================================================================
         
         html_content = ZOHO_DASHBOARD_HTML.format(
-            team_name=team_name,
-            team_id=team_id or "N/A",
-            # Slack placeholders
-            slack_status_class=slack_status_class,
-            slack_status_text=slack_status_text,
-            slack_description=slack_description,
-            slack_info_html=slack_info_html,
-            slack_action_button=slack_action_button,
-            slack_success_html=slack_success_html,
-            # Zoho placeholders
+            team_name=org_name,
+            team_id=effective_org_id or "N/A",
+            # Zoho placeholders (shown FIRST)
             zoho_status_class=zoho_status_class,
             zoho_status_text=zoho_status_text,
             zoho_description=zoho_description,
             zoho_info_html=zoho_info_html,
             zoho_action_button=zoho_action_button,
             zoho_success_html=zoho_success_html,
+            # Slack placeholders (shown SECOND)
+            slack_status_class=slack_status_class,
+            slack_status_text=slack_status_text,
+            slack_description=slack_description,
+            slack_info_html=slack_info_html,
+            slack_action_button=slack_action_button,
+            slack_success_html=slack_success_html,
             alert_html=alert_html
         )
         
-        return HTMLResponse(content=html_content)
+        # Return response with headers allowing Zoho iframe embedding
+        # Note: X-Frame-Options is omitted - using CSP frame-ancestors instead (modern approach)
+        return Response(
+            content=html_content,
+            media_type="text/html",
+            headers={
+                "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+            }
+        )
         
     except Exception as e:
-        logger.error(f"Error showing dashboard for team {team_id}: {e}", exc_info=True)
-        return HTMLResponse(
+        logger.error(f"Error showing dashboard for org {effective_org_id}: {e}", exc_info=True)
+        return Response(
             content=ZOHO_ERROR_PAGE_HTML.format(
                 error_message=f"An error occurred: {str(e)}",
-                retry_url=f"/dashboard?team_id={team_id}" if team_id else "/dashboard"
+                retry_url=f"/dashboard?org_id={effective_org_id}" if effective_org_id else "/dashboard"
             ),
-            status_code=500
+            media_type="text/html",
+            status_code=500,
+            headers={
+                "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+            }
         )
