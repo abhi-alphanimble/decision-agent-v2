@@ -19,6 +19,7 @@ from ..config import config
 from ..dependencies import get_db
 from ..models import SlackInstallation, ZohoInstallation
 from ..utils import get_utc_now
+from ..templates_zoho import ZOHO_OAUTH_SUCCESS_HTML
 from slack_sdk.web import WebClient
 
 logger = logging.getLogger(__name__)
@@ -317,10 +318,16 @@ async def slack_callback(
             
         db.commit()
         
-        # Redirect to dashboard with org_id
-        dashboard_url = f"/dashboard?org_id={org_id}"
-        logger.info(f"🔄 Redirecting to dashboard: {dashboard_url}")
-        return RedirectResponse(url=dashboard_url, status_code=302)
+        # Return success page that closes popup and signals parent to refresh
+        logger.info(f"🔄 Showing success page for Slack {team_name}, org {org_id}")
+        return HTMLResponse(
+            content=ZOHO_OAUTH_SUCCESS_HTML.format(
+                service_name=f"Slack ({team_name})",
+                service_type="slack",
+                org_id=org_id
+            ),
+            status_code=200
+        )
 
     except Exception as e:
         logger.error(f"❌ OAuth Access Error: {e}", exc_info=True)

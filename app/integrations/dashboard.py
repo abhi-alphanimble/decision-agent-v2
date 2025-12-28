@@ -195,7 +195,7 @@ async def show_dashboard(
                     </div>
                 """
                 
-                zoho_action_button = '<a href="/zoho/install" class="btn btn-primary" target="_blank">Connect Zoho CRM</a>'
+                zoho_action_button = '<button onclick="startZohoOAuth()" class="btn btn-primary">Connect Zoho CRM</button>'
                 zoho_success_html = ""
         else:
             # No org_id - Zoho not connected yet
@@ -214,7 +214,7 @@ async def show_dashboard(
                 </div>
             """
             
-            zoho_action_button = '<a href="/zoho/install" class="btn btn-primary" target="_blank">Connect Zoho CRM</a>'
+            zoho_action_button = '<button onclick="startZohoOAuth()" class="btn btn-primary">Connect Zoho CRM</button>'
             zoho_success_html = ""
         
         # =====================================================================
