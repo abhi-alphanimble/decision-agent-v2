@@ -131,7 +131,7 @@ SUCCESS_PAGE_HTML = """
         <a href="slack://app?team={team_id}" class="btn">Open in Slack</a>
         
         <p class="footer">
-            Need help? Contact us at support@example.com
+            Need help? Contact us at support@decisionagent.ai
         </p>
     </div>
 </body>
@@ -301,7 +301,7 @@ PRIVACY_POLICY_HTML = """
             <h2>Contact Us</h2>
             <p>
                 If you have questions about this privacy policy or want to exercise your rights, 
-                please contact us at: <strong>support@example.com</strong>
+                please contact us at: <strong>support@decisionagent.ai</strong>
             </p>
         </div>
         
@@ -509,7 +509,7 @@ SUPPORT_PAGE_HTML = """
             <div class="emoji">📧</div>
             <h2>Need More Help?</h2>
             <p>Contact our support team:</p>
-            <a href="mailto:support@example.com" class="email-link">support@example.com</a>
+            <a href="mailto:support@decisionagent.ai" class="email-link">support@decisionagent.ai</a>
         </div>
     </div>
 </body>
@@ -655,7 +655,7 @@ ZOHO_ERROR_PAGE_HTML = """
         </div>
         
         <p class="footer">
-            If this problem persists, please contact support@example.com
+            If this problem persists, please contact support@decisionagent.ai
         </p>
     </div>
 </body>

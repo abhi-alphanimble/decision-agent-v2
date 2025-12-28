@@ -557,94 +557,108 @@ async def zoho_status(org_id: str, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/zoho/disconnect")
+def revoke_zoho_token(refresh_token_encrypted: str, accounts_url: str = ZOHO_ACCOUNTS_URL) -> bool:
+    """Revoke Zoho CRM tokens."""
+    try:
+        # Decrypt refresh token
+        refresh_token = decrypt_token(refresh_token_encrypted)
+        if not refresh_token:
+            return False
+
+        # Zoho's revocation expects the token to be revoked (refresh token is best to revoke entire session)
+        response = requests.post(
+            f"{accounts_url}/oauth/v2/token/revoke",
+            params={"token": refresh_token},
+            timeout=10
+        )
+        if response.status_code == 200:
+            logger.info("Zoho CRM tokens revoked successfully")
+            return True
+        else:
+            logger.warning(f"Failed to revoke Zoho tokens: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        logger.error(f"Error revoking Zoho tokens: {e}")
+        return False
+
+
+@router.api_route("/zoho/disconnect", methods=["GET", "POST"])
 async def zoho_disconnect(request: Request, db: Session = Depends(get_db)):
     """
     Disconnect Zoho CRM for an organization.
     
-    WARNING: This will also delete the linked Slack installation due to cascade.
+    WARNING: This will also delete the linked Slack installation and revoke tokens for both services.
     
-    Accepts either:
-    - Form data: org_id field
-    - JSON body: {"org_id": "123456789"}
+    Accepts:
     - Query param: ?org_id=123456789
-        
-    Returns:
-        JSON with success/error message or redirect to dashboard
+    - Form data: org_id field (POST)
+    - JSON body: {"org_id": "123456789"} (POST)
     """
     try:
         # Try to get org_id from multiple sources
         org_id = None
         
-        # 1. Try query params first
+        # 1. Try query params first (works for GET and POST)
         org_id = request.query_params.get("org_id")
         
-        # 2. Try form data
-        if not org_id:
+        # 2. Try form data or JSON body for POST requests
+        if not org_id and request.method == "POST":
             try:
-                form_data = await request.form()
-                org_id = form_data.get("org_id")
-            except Exception:
-                pass
-        
-        # 3. Try JSON body
-        if not org_id:
-            try:
-                body = await request.body()
-                if body:
-                    import json
-                    data = json.loads(body)
+                content_type = request.headers.get("content-type", "")
+                if "application/json" in content_type:
+                    data = await request.json()
                     org_id = data.get("org_id")
+                else:
+                    form_data = await request.form()
+                    org_id = form_data.get("org_id")
             except Exception:
                 pass
         
         if not org_id:
-            raise HTTPException(status_code=400, detail="org_id is required")
+            logger.warning("Zoho disconnect requested without org_id")
+            return RedirectResponse(url="/dashboard", status_code=303)
         
         installation = db.query(ZohoInstallation).filter(
             ZohoInstallation.zoho_org_id == org_id
         ).first()
         
         if not installation:
-            return JSONResponse(
-                content={
-                    "success": False,
-                    "message": f"No Zoho connection found for org {org_id}"
-                },
-                status_code=404
-            )
+            logger.warning(f"No Zoho installation found for org {org_id}")
+            return RedirectResponse(url="/dashboard", status_code=303)
+
+        # 1. Revoke Slack tokens first if connected
+        slack_install = db.query(SlackInstallation).filter(
+            SlackInstallation.zoho_org_id == org_id
+        ).first()
+        if slack_install:
+            try:
+                from ..slack.client import get_client_for_team
+                client = get_client_for_team(slack_install.team_id, db)
+                if client:
+                    client.revoke_token()
+            except Exception as e:
+                logger.warning(f"Failed to revoke Slack token during Zoho disconnect: {e}")
+
+        # 2. Revoke Zoho tokens
+        if installation.refresh_token:
+            revoke_zoho_token(installation.refresh_token)
         
-        # Delete the installation (cascades to Slack and related data)
+        # 3. Delete the installation (cascades to related data in DB)
         db.delete(installation)
         db.commit()
         
-        logger.info(f"Zoho disconnected for org {org_id}")
+        logger.info(f"✅ Zoho and Slack disconnected for org {org_id}")
         
-        # Check if this was a form submission (browser) or API call
-        content_type = request.headers.get("content-type", "")
-        accept = request.headers.get("accept", "")
-        
-        # If it's a form submission, redirect to dashboard (fresh start)
-        if "form" in content_type or "text/html" in accept:
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(
-                url="/dashboard",
-                status_code=303  # See Other - proper redirect after POST
-            )
-        
-        # Otherwise return JSON
-        return JSONResponse(
-            content={
-                "success": True,
-                "message": f"Zoho CRM disconnected for org {org_id}"
-            }
+        # Always redirect to dashboard for success
+        return RedirectResponse(
+            url="/dashboard",
+            status_code=303
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error disconnecting Zoho: {e}", exc_info=True)
         db.rollback()
+        # Still redirect but maybe with an error (though 500 is safer for debugging)
         raise HTTPException(status_code=500, detail=str(e))
 
 

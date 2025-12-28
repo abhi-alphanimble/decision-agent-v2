@@ -270,6 +270,19 @@ class WorkspaceSlackClient:
             self.logger.exception("Error checking bot channel membership: %s", error_code)
             raise
 
+    def revoke_token(self) -> bool:
+        """Revoke the bot token for this workspace."""
+        try:
+            response = self.client.auth_revoke()
+            self.logger.info("Bot token revoked successfully")
+            return response.get('ok', False)
+        except SlackApiError as e:
+            self.logger.warning("Error revoking bot token: %s", e.response.get('error') if hasattr(e, 'response') else str(e))
+            return False
+        except Exception as e:
+            self.logger.error("Unexpected error revoking bot token: %s", str(e))
+            return False
+
 
 def get_client_for_team(team_id: str, db: Session) -> Optional[WorkspaceSlackClient]:
     """

@@ -738,28 +738,7 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
     return await slack_webhook(request, background_tasks)
 
 
-# ============================================================================
-# STATIC PAGES (Privacy Policy, Support)
-# ============================================================================
-
-@app.get("/privacy")
-async def privacy_policy():
-    """Privacy Policy page - required for Slack App Directory."""
-    from fastapi.responses import HTMLResponse
-    from .templates import PRIVACY_POLICY_HTML
-    return HTMLResponse(content=PRIVACY_POLICY_HTML, status_code=200)
-
-
-@app.get("/support")
-async def support_page():
-    """Support page - required for Slack App Directory."""
-    from fastapi.responses import HTMLResponse
-    from .templates import SUPPORT_PAGE_HTML
-    return HTMLResponse(content=SUPPORT_PAGE_HTML, status_code=200)
-
-
-# ============================================================================
-# APP LIFECYCLE EVENTS (Uninstall, Token Revocation)
+# App lifecycle events (Uninstall, Token Revocation)
 # ============================================================================
 
 async def handle_app_uninstalled(team_id: str):

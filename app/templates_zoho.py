@@ -280,7 +280,7 @@ ZOHO_ERROR_PAGE_HTML = """
         </div>
         
         <div class="footer">
-            Still having issues? <a href="mailto:support@example.com">Contact Support</a>
+            Still having issues? <a href="mailto:support@decisionagent.ai">Contact Support</a>
         </div>
     </div>
 </body>
@@ -509,7 +509,7 @@ ZOHO_OAUTH_SUCCESS_HTML = """
 """
 
 # =============================================================================
-# ZOHO DASHBOARD PAGE
+# ZOHO DASHBOARD PAGE - NEW CLEAN DESIGN
 # =============================================================================
 
 ZOHO_DASHBOARD_HTML = """
@@ -518,223 +518,259 @@ ZOHO_DASHBOARD_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Integrations Dashboard - Decision Agent</title>
+    <title>Integration Dashboard - Decision Agent</title>
     
     <!-- Zoho CRM Client Script SDK for WebTab integration -->
     <script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
     <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {{
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --border: #e2e8f0;
+            --radius: 12px;
+            --danger: #ef4444;
+            --danger-hover: #b91c1c;
+            --success: #10b981;
+            --success-bg: #dcfce7;
+            --success-text: #166534;
         }}
+
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #f7fafc;
-            min-height: 100vh;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding: 40px 20px;
         }}
-        
-        .header {{
-            max-width: 800px;
-            margin: 0 auto 32px;
-            text-align: center;
-        }}
-        
-        .logo {{
-            font-size: 36px;
-            margin-bottom: 8px;
-        }}
-        
-        h1 {{
-            color: #1a202c;
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }}
-        
-        .team-name {{
-            color: #4a5568;
-            font-size: 18px;
-        }}
-        
-        .container {{
-            max-width: 800px;
-            margin: 0 auto;
-        }}
-        
-        .card {{
-            background: white;
+
+        .container {{ max-width: 760px; margin: 0 auto; }}
+
+        /* Header */
+        .header {{ text-align: center; margin-bottom: 40px; }}
+        .header h1 {{ font-size: 24px; font-weight: 700; margin-bottom: 8px; }}
+        .header p {{ color: var(--text-muted); font-size: 15px; }}
+
+        /* Alert */
+        .alert-setup {{
+            background: #eff6ff;
+            border: 1px solid #dbeafe;
+            color: #1e40af;
+            padding: 16px;
             border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            padding: 32px;
+            margin-bottom: 32px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 500;
+        }}
+
+        /* Card System */
+        .card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
             margin-bottom: 24px;
-            transition: all 0.3s ease;
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }}
         
-        .card:hover {{
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }}
-        
+        /* Top: Brand + Active Badge */
         .card-header {{
+            padding: 24px 24px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 2px solid #e2e8f0;
         }}
+
+        .brand-section {{ display: flex; align-items: center; gap: 14px; }}
+        .logo-box {{ width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; }}
+        .logo-svg {{ width: 100%; height: 100%; }}
         
-        .card-title {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }}
-        
-        .card-icon {{
-            font-size: 32px;
-        }}
-        
-        .card-title-text {{
-            color: #1a202c;
-            font-size: 24px;
-            font-weight: 700;
-        }}
-        
+        .brand-title {{ font-size: 18px; font-weight: 700; color: var(--text-main); }}
+        .brand-subtitle {{ font-size: 13px; color: var(--text-muted); }}
+
+        /* Status Badges */
         .status-badge {{
-            padding: 6px 16px;
+            padding: 6px 12px;
             border-radius: 20px;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
+            background: #f1f5f9;
+            color: #64748b;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
-        
-        .status-connected {{
-            background: #c6f6d5;
-            color: #22543d;
-        }}
-        
-        .status-disconnected {{
-            background: #fed7d7;
-            color: #742a2a;
-        }}
-        
-        .card-body {{
-            color: #4a5568;
-            line-height: 1.6;
-        }}
-        
-        .info-grid {{
-            display: grid;
-            gap: 16px;
-            margin: 20px 0;
-        }}
-        
-        .info-item {{
+
+        .badge-active {{
+            background-color: var(--success-bg);
+            color: var(--success-text);
+            font-size: 12px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 6px;
             display: flex;
-            justify-content: space-between;
-            padding: 12px;
-            background: #f7fafc;
+            align-items: center;
+            gap: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        /* Card Body for before connect */
+        .card-body {{ padding: 32px 24px; text-align: center; }}
+        .description {{ color: var(--text-muted); margin-bottom: 24px; max-width: 400px; margin-left: auto; margin-right: auto; }}
+
+        /* Grid Layout for Details */
+        .grid-container {{
+            background: #f8fafc;
+            margin: 0 24px;
+            padding: 20px;
             border-radius: 8px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            border: 1px solid #f1f5f9;
         }}
+
+        .grid-item {{ display: flex; flex-direction: column; gap: 4px; }}
         
-        .info-label {{
-            color: #718096;
-            font-size: 14px;
-        }}
-        
-        .info-value {{
-            color: #1a202c;
+        .label {{
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             font-weight: 600;
-            font-size: 14px;
         }}
         
-        .btn {{
-            display: inline-block;
-            padding: 12px 28px;
+        .value {{
             font-size: 15px;
             font-weight: 600;
-            text-decoration: none;
+            color: var(--text-main);
+            font-variant-numeric: tabular-nums;
+        }}
+
+        /* Footer: Date + Disconnect */
+        .card-footer {{
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+
+        .date-meta {{
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }}
+
+        /* Buttons */
+        .btn {{
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px;
+            padding: 10px 24px; 
             border-radius: 8px;
-            transition: all 0.3s ease;
+            font-weight: 600; 
+            font-size: 14px;
+            cursor: pointer; 
+            border: none; 
+            transition: all 0.2s;
+        }}
+
+        .btn-primary {{ background: var(--primary); color: white; }}
+        .btn-primary:hover {{ background: var(--primary-hover); transform: translateY(-1px); }}
+        
+        .btn-disabled {{ 
+            background: #f1f5f9; 
+            color: #94a3b8; 
+            cursor: not-allowed; 
+            border: 1px solid var(--border); 
+        }}
+
+        .btn-disconnect {{
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
-            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }}
+        
+        .btn-disconnect:hover {{
+            background: #fef2f2;
+            color: var(--danger-hover);
+            border-color: var(--danger-hover);
+        }}
+
+        /* Locked State Overlay */
+        .locked-card {{ opacity: 0.7; position: relative; }}
+        .locked-card .card-body {{ filter: grayscale(100%); }}
+
+        /* Quick Commands Section */
+        .commands-card {{
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-top: 32px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }}
+
+        .commands-title {{
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+        }}
+
+        .command-row {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }}
+        .command-row:last-child {{ border-bottom: none; }}
+
+        .cmd-pill {{
+            background: #eff6ff;
+            color: var(--primary);
+            border: 1px solid #dbeafe;
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 6px;
+            min-width: 80px;
             text-align: center;
         }}
-        
-        .btn-primary {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }}
-        
-        .btn-primary:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }}
-        
-        .btn-danger {{
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
-        }}
-        
-        .btn-danger:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
-        }}
-        
-        .btn-disabled {{
-            background: #e2e8f0;
-            color: #a0aec0;
-            cursor: not-allowed;
-        }}
-        
-        .btn-disabled:hover {{
-            transform: none;
-            box-shadow: none;
-        }}
-        
-        .alert {{
-            padding: 16px 20px;
-            border-radius: 8px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-        }}
-        
-        .alert-info {{
-            background: #ebf8ff;
-            border-left: 4px solid #3182ce;
-            color: #2c5282;
-        }}
-        
-        .alert-warning {{
-            background: #fffaf0;
-            border-left: 4px solid #ed8936;
-            color: #7c2d12;
-        }}
-        
-        .alert-icon {{
-            font-size: 20px;
-            flex-shrink: 0;
-        }}
-        
+
+        .cmd-desc {{ font-size: 14px; color: var(--text-main); }}
+
+        /* Footer */
         .footer {{
-            max-width: 800px;
+            max-width: 760px;
             margin: 48px auto 0;
             text-align: center;
-            color: #718096;
+            color: var(--text-muted);
             font-size: 14px;
             padding-top: 24px;
-            border-top: 1px solid #e2e8f0;
+            border-top: 1px solid var(--border);
         }}
         
         .footer a {{
-            color: #667eea;
+            color: var(--primary);
             text-decoration: none;
             font-weight: 600;
         }}
@@ -742,316 +778,90 @@ ZOHO_DASHBOARD_HTML = """
         .footer a:hover {{
             text-decoration: underline;
         }}
-        
-        /* Success Message Cards - Minimal Style */
-        .success-card {{
-            border-radius: 8px;
-            padding: 16px 20px;
-            margin-bottom: 16px;
-            border: 1px solid #e2e8f0;
-        }}
-        
-        .success-card-slack {{
-            background: #f8fafc;
-            border-left: 3px solid #667eea;
-        }}
-        
-        .success-card-zoho {{
-            background: #f8fafc;
-            border-left: 3px solid #38a169;
-        }}
-        
-        .success-header {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }}
-        
-        .success-icon {{
-            font-size: 20px;
-        }}
-        
-        .success-title {{
-            font-size: 15px;
-            font-weight: 600;
-            color: #2d3748;
-        }}
-        
-        .success-subtitle {{
-            font-size: 13px;
-            color: #718096;
-            margin-bottom: 12px;
-        }}
-        
-        .success-commands {{
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 12px;
-        }}
-        
-        .success-commands-title {{
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #4a5568;
-        }}
-        
-        .command-item {{
-            background: #f7fafc;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-family: 'SF Mono', 'Consolas', monospace;
-            font-size: 12px;
-            margin-bottom: 4px;
-            color: #4a5568;
-        }}
-        
-        .command-item:last-child {{
-            margin-bottom: 0;
-        }}
-        
-        .success-features {{
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 12px;
-        }}
-        
-        .success-feature {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 6px;
-            font-size: 13px;
-            color: #4a5568;
-        }}
-        
-        .success-feature:last-child {{
-            margin-bottom: 0;
-        }}
-        
-        .success-feature-icon {{
-            font-size: 14px;
-        }}
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">📊</div>
-        <h1>Integrations Dashboard</h1>
-        <p class="team-name">{team_name}</p>
-    </div>
-    
+
     <div class="container">
-        <!-- Debug Panel (collapsible) -->
-        <details style="margin-bottom: 20px; background: #1a202c; border-radius: 8px; padding: 12px; color: #e2e8f0;" open>
-            <summary style="cursor: pointer; font-weight: 600; color: #68d391;">🔧 Debug Info (click to expand)</summary>
-            <div style="margin-top: 12px; font-family: monospace; font-size: 12px; line-height: 1.6;">
-                <div><strong>Current Org ID:</strong> <span id="debug-org-id">{team_id}</span></div>
-                <div><strong>URL Params:</strong> <span id="debug-url-params">Loading...</span></div>
-                <div><strong>Zoho SDK Status:</strong> <span id="debug-sdk-status">Checking...</span></div>
-                <div><strong>Zoho Org (from SDK):</strong> <span id="debug-zoho-org">Not fetched yet</span></div>
-                <div style="margin-top: 12px;">
-                    <button onclick="checkApiStatus()" style="background: #4299e1; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 12px;">🔍 Check API Status</button>
-                </div>
-                <div style="margin-top: 8px;"><strong>API Response:</strong></div>
-                <div id="debug-api-response" style="background: #2d3748; padding: 8px; border-radius: 4px; margin-top: 4px; white-space: pre-wrap;">Click button above to check</div>
-                <div style="margin-top: 8px;"><strong>Log:</strong></div>
-                <div id="debug-log" style="background: #2d3748; padding: 8px; border-radius: 4px; max-height: 150px; overflow-y: auto; margin-top: 4px;"></div>
-            </div>
-        </details>
-        
+        <div class="header">
+            <h1>{header_title}</h1>
+            <p>{header_subtitle}</p>
+        </div>
+
         {alert_html}
-        
-        <!-- Zoho CRM Integration Card (FIRST - Primary Connection) -->
-        <div class="card">
-            <div class="card-header">
-                <div class="card-title">
-                    <span class="card-icon">🔗</span>
-                    <span class="card-title-text">Zoho CRM</span>
-                </div>
-                <span class="status-badge {zoho_status_class}">{zoho_status_text}</span>
-            </div>
-            <div class="card-body">
-                <p>{zoho_description}</p>
-                
-                {zoho_info_html}
-                
-                <div style="margin-top: 24px;">
-                    {zoho_action_button}
-                </div>
-            </div>
-        </div>
-        
-        <!-- Zoho Success Message (shown when connected) -->
-        {zoho_success_html}
-        
-        <!-- Slack Integration Card (SECOND - Requires Zoho) -->
-        <div class="card">
-            <div class="card-header">
-                <div class="card-title">
-                    <span class="card-icon">💬</span>
-                    <span class="card-title-text">Slack</span>
-                </div>
-                <span class="status-badge {slack_status_class}">{slack_status_text}</span>
-            </div>
-            <div class="card-body">
-                <p>{slack_description}</p>
-                
-                {slack_info_html}
-                
-                <div style="margin-top: 24px;">
-                    {slack_action_button}
-                </div>
-            </div>
-        </div>
-        
-        <!-- Slack Success Message (shown when connected) -->
-        {slack_success_html}
+
+        <!-- Zoho CRM Integration Card -->
+        {zoho_card_html}
+
+        <!-- Slack Integration Card -->
+        {slack_card_html}
+
+        <!-- Quick Commands (shown when both connected) -->
+        {commands_html}
     </div>
-    
+
     <div class="footer">
         Need help? <a href="/support">Contact Support</a> | 
         <a href="/privacy">Privacy Policy</a>
     </div>
+    
     <script>
         (function() {{
             var currentOrgId = "{team_id}";
             var isZohoInitialized = false;
-            
-            // ================================================================
-            // DEBUG LOGGING
-            // ================================================================
-            
-            function debugLog(msg) {{
-                console.log(msg);
-                var logDiv = document.getElementById('debug-log');
-                if (logDiv) {{
-                    var time = new Date().toLocaleTimeString();
-                    logDiv.innerHTML += '<div style="color: #a0aec0;">[' + time + '] ' + msg + '</div>';
-                    logDiv.scrollTop = logDiv.scrollHeight;
-                }}
-            }}
-            
-            function updateDebugInfo() {{
-                // URL params
-                var urlParamsDiv = document.getElementById('debug-url-params');
-                if (urlParamsDiv) {{
-                    urlParamsDiv.textContent = window.location.search || '(none)';
-                }}
-            }}
-            updateDebugInfo();
-            
-            // Make checkApiStatus available globally
-            window.checkApiStatus = function() {{
-                var apiResponseDiv = document.getElementById('debug-api-response');
-                var orgId = currentOrgId || 'N/A';
-                
-                if (orgId === 'N/A' || !orgId) {{
-                    if (apiResponseDiv) apiResponseDiv.textContent = '❌ No org_id available to check';
-                    return;
-                }}
-                
-                if (apiResponseDiv) apiResponseDiv.textContent = '🔄 Checking...';
-                debugLog('🔍 Calling /zoho/status?org_id=' + orgId);
-                
-                fetch('/zoho/status?org_id=' + orgId)
-                    .then(function(response) {{
-                        return response.json();
-                    }})
-                    .then(function(data) {{
-                        debugLog('✅ API Response received');
-                        if (apiResponseDiv) {{
-                            apiResponseDiv.textContent = JSON.stringify(data, null, 2);
-                        }}
-                        
-                        // If connected, show a success message
-                        if (data.connected) {{
-                            debugLog('✅ Backend says CONNECTED!');
-                        }} else {{
-                            debugLog('❌ Backend says NOT CONNECTED: ' + data.message);
-                        }}
-                    }})
-                    .catch(function(err) {{
-                        debugLog('❌ API Error: ' + err);
-                        if (apiResponseDiv) apiResponseDiv.textContent = '❌ Error: ' + err;
-                    }});
-            }};
-            
-            // Auto-check API status on page load if we have an org_id
-            if (currentOrgId && currentOrgId !== 'N/A') {{
-                setTimeout(window.checkApiStatus, 1000);
-            }}
-            
-            // ================================================================
-            // ZOHO OAUTH FLOW WITH ORG_ID VALIDATION
-            // ================================================================
-            
-            // Store the org_id fetched from SDK (will be populated by SDK init)
             var sdkOrgId = null;
             
+            // ================================================================
+            // ZOHO OAUTH FLOW
+            // ================================================================
+            
             window.startZohoOAuth = function() {{
-                debugLog('🔐 Starting Zoho OAuth flow...');
-                
-                // First, try to use the org_id we already have from the URL/SDK
-                // This is the most reliable as it's already validated
                 if (sdkOrgId) {{
-                    debugLog('✅ Using cached SDK org_id: ' + sdkOrgId);
                     openOAuthWindow(sdkOrgId);
                     return;
                 }}
                 
-                // Fallback to currentOrgId from URL if available
                 if (currentOrgId && currentOrgId !== 'N/A' && currentOrgId !== '') {{
-                    debugLog('✅ Using org_id from URL: ' + currentOrgId);
                     openOAuthWindow(currentOrgId);
                     return;
                 }}
                 
-                // Last resort: try to fetch from SDK with a timeout
                 if (typeof ZOHO !== 'undefined' && ZOHO.CRM && ZOHO.CRM.CONFIG) {{
-                    debugLog('🔄 Fetching org_id from SDK (3s timeout)...');
-                    
                     var timeoutId = null;
                     var resolved = false;
                     
-                    // Create a timeout to avoid hanging forever
                     timeoutId = setTimeout(function() {{
                         if (!resolved) {{
                             resolved = true;
-                            debugLog('⏱️ SDK timeout - proceeding without org_id validation');
                             openOAuthWindow(null);
                         }}
-                    }}, 3000); // 3 second timeout
+                    }}, 3000);
                     
                     ZOHO.CRM.CONFIG.getOrgInfo().then(function(response) {{
-                        if (resolved) return; // Already timed out
+                        if (resolved) return;
                         resolved = true;
                         clearTimeout(timeoutId);
                         
                         if (response && response.org && response.org.length > 0) {{
                             sdkOrgId = response.org[0].zgid;
-                            debugLog('✅ Got org_id from SDK: ' + sdkOrgId);
                             openOAuthWindow(sdkOrgId);
                         }} else {{
-                            debugLog('⚠️ No org_id from SDK, proceeding without validation');
                             openOAuthWindow(null);
                         }}
                     }}).catch(function(err) {{
-                        if (resolved) return; // Already timed out
+                        if (resolved) return;
                         resolved = true;
                         clearTimeout(timeoutId);
-                        
-                        debugLog('❌ Error fetching org_id: ' + err);
                         openOAuthWindow(null);
                     }});
                 }} else {{
-                    // SDK not available - might be running outside Zoho context
-                    debugLog('⚠️ SDK not available, proceeding without org_id validation');
                     openOAuthWindow(null);
                 }}
+            }};
+            
+            window.startSlackOAuth = function(orgId) {{
+                var url = '/slack/install?org_id=' + orgId;
+                window.open(url, 'SlackOAuth', 'width=600,height=800,status=no,resizable=yes,scrollbars=yes');
             }};
             
             function openOAuthWindow(expectedOrgId) {{
@@ -1059,8 +869,7 @@ ZOHO_DASHBOARD_HTML = """
                 if (expectedOrgId) {{
                     url += '?expected_org_id=' + expectedOrgId;
                 }}
-                debugLog('🔗 Opening OAuth URL: ' + url);
-                window.open(url, '_blank');
+                window.open(url, 'ZohoOAuth', 'width=800,height=700,status=no,resizable=yes,scrollbars=yes');
             }}
             
             // ================================================================
@@ -1068,87 +877,43 @@ ZOHO_DASHBOARD_HTML = """
             // ================================================================
             
             function initZohoSDK() {{
-                var sdkStatus = document.getElementById('debug-sdk-status');
-                
-                if (typeof ZOHO === 'undefined') {{
-                    debugLog('❌ ZOHO global object not found');
-                    if (sdkStatus) sdkStatus.textContent = '❌ SDK not loaded';
+                if (typeof ZOHO === 'undefined' || !ZOHO.embeddedApp) {{
                     return;
                 }}
-                
-                if (!ZOHO.embeddedApp) {{
-                    debugLog('❌ ZOHO.embeddedApp not available');
-                    if (sdkStatus) sdkStatus.textContent = '❌ embeddedApp not available';
-                    return;
-                }}
-                
-                debugLog('🔄 Initializing Zoho SDK...');
-                if (sdkStatus) sdkStatus.textContent = '🔄 Initializing...';
                 
                 try {{
-                    // Initialize the embedded app
                     ZOHO.embeddedApp.on("PageLoad", function(data) {{
-                        debugLog('✅ PageLoad event received');
-                        debugLog('PageLoad data: ' + JSON.stringify(data));
                         isZohoInitialized = true;
-                        if (sdkStatus) sdkStatus.textContent = '✅ PageLoad received';
-                        
-                        // Try to get org info from Zoho CRM context
                         fetchZohoOrgId();
                     }});
                     
-                    ZOHO.embeddedApp.init().then(function() {{
-                        debugLog('✅ embeddedApp.init() successful');
-                    }}).catch(function(err) {{
-                        debugLog('❌ embeddedApp.init() error: ' + err);
-                        if (sdkStatus) sdkStatus.textContent = '❌ Init failed';
+                    ZOHO.embeddedApp.init().catch(function(err) {{
+                        console.log('Zoho SDK init error:', err);
                     }});
-                    
                 }} catch(e) {{
-                    debugLog('❌ Exception in initZohoSDK: ' + e);
-                    if (sdkStatus) sdkStatus.textContent = '❌ Exception';
+                    console.log('Error initializing Zoho SDK:', e);
                 }}
             }}
             
             function fetchZohoOrgId() {{
-                var zohoOrgDiv = document.getElementById('debug-zoho-org');
-                
                 if (typeof ZOHO === 'undefined' || !ZOHO.CRM) {{
-                    debugLog('❌ ZOHO.CRM not available');
-                    if (zohoOrgDiv) zohoOrgDiv.textContent = '❌ CRM API not available';
                     return;
                 }}
                 
-                debugLog('🔄 Fetching org info via ZOHO.CRM.CONFIG.getOrgInfo()...');
-                
-                // Get organization info from Zoho CRM
                 ZOHO.CRM.CONFIG.getOrgInfo().then(function(response) {{
-                    debugLog('✅ getOrgInfo response: ' + JSON.stringify(response));
-                    
                     if (response && response.org && response.org.length > 0) {{
                         var zohoOrgId = response.org[0].zgid;
-                        sdkOrgId = zohoOrgId; // Store for OAuth flow
-                        debugLog('✅ Zoho Org ID (zgid): ' + zohoOrgId);
-                        if (zohoOrgDiv) zohoOrgDiv.textContent = zohoOrgId;
+                        sdkOrgId = zohoOrgId;
                         
-                        // If current page doesn't have the org_id or has wrong one, reload with correct org_id
                         if (zohoOrgId && (currentOrgId === 'N/A' || !currentOrgId || currentOrgId !== zohoOrgId)) {{
-                            debugLog('🔄 Reloading with correct org_id: ' + zohoOrgId);
                             window.location.href = '/dashboard?orgId=' + zohoOrgId;
-                        }} else {{
-                            debugLog('✅ Org ID matches, no reload needed');
                         }}
-                    }} else {{
-                        debugLog('⚠️ No org data in response');
-                        if (zohoOrgDiv) zohoOrgDiv.textContent = '⚠️ No org data';
                     }}
                 }}).catch(function(err) {{
-                    debugLog('❌ getOrgInfo error: ' + err);
-                    if (zohoOrgDiv) zohoOrgDiv.textContent = '❌ Error: ' + err;
+                    console.log('Error fetching Zoho org info:', err);
                 }});
             }}
             
-            // Initialize Zoho SDK on page load
             if (document.readyState === 'complete') {{
                 initZohoSDK();
             }} else {{
@@ -1156,16 +921,13 @@ ZOHO_DASHBOARD_HTML = """
             }}
             
             // ================================================================
-            // OAUTH POPUP COMMUNICATION (fallback methods)
+            // OAUTH POPUP COMMUNICATION
             // ================================================================
             
-            // Listen for postMessage from OAuth popup
             window.addEventListener('message', function(event) {{
                 try {{
                     var data = event.data;
                     if (data && data.type === 'oauth_success') {{
-                        console.log('Received OAuth success message:', data);
-                        // Refresh the page with the org_id
                         var orgId = data.org_id || currentOrgId;
                         if (orgId && orgId !== 'N/A') {{
                             window.location.href = '/dashboard?org_id=' + orgId;
@@ -1173,50 +935,33 @@ ZOHO_DASHBOARD_HTML = """
                             window.location.reload();
                         }}
                     }}
-                }} catch(e) {{
-                    console.log('Error processing message:', e);
-                }}
+                }} catch(e) {{ }}
             }});
             
-            // Check localStorage for OAuth completion on page load
             function checkLocalStorageForOAuth() {{
                 try {{
                     var oauthData = localStorage.getItem('oauth_complete');
                     if (oauthData) {{
                         var data = JSON.parse(oauthData);
-                        // Only process if it's recent (within last 30 seconds)
                         if (Date.now() - data.timestamp < 30000) {{
-                            console.log('Found recent OAuth completion:', data);
-                            // Clear the flag
                             localStorage.removeItem('oauth_complete');
-                            // Refresh with the new org_id
                             if (data.org_id) {{
                                 window.location.href = '/dashboard?org_id=' + data.org_id;
                             }} else {{
                                 window.location.reload();
                             }}
                         }} else {{
-                            // Clear old flag
                             localStorage.removeItem('oauth_complete');
                         }}
                     }}
-                }} catch(e) {{
-                    console.log('localStorage check error:', e);
-                }}
+                }} catch(e) {{ }}
             }}
             
-            // Check immediately on page load
             checkLocalStorageForOAuth();
-            
-            // Also poll localStorage every 2 seconds (for cross-tab communication)
             setInterval(checkLocalStorageForOAuth, 2000);
             
-            // Focus handler - check when window regains focus (user closes popup and comes back)
             window.addEventListener('focus', function() {{
-                // Small delay to let localStorage update
                 setTimeout(checkLocalStorageForOAuth, 500);
-                
-                // Also try to refetch from Zoho SDK if available
                 if (isZohoInitialized) {{
                     setTimeout(fetchZohoOrgId, 1000);
                 }}
@@ -1226,3 +971,210 @@ ZOHO_DASHBOARD_HTML = """
 </body>
 </html>
 """
+
+# =============================================================================
+# ZOHO CARD TEMPLATES (Connected / Not Connected)
+# =============================================================================
+
+ZOHO_LOGO_SVG = '''<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" class="logo-svg">
+    <style>.st1{fill:#fff}</style>
+    <circle cx="512" cy="512" r="512" style="fill:#2378c7"></circle>
+    <g transform="scale(0.8) translate(128, 128)">
+        <path class="st1" d="M810.3 452.6 829 431v147.8l-18.7 18.7V452.6zm-137.7-2.4h135.2l19-21.9-134.2.1m45.2 62.6c-9.3 0-16.4 3.2-21.7 9.6-5.3 6.4-7.9 15.2-7.9 26.6 0 11.2 2.7 19.9 8 26.2 5.3 6.3 12.4 9.5 21.6 9.5 9.2 0 16.3-3.2 21.5-9.5 5.3-6.4 7.9-15.1 7.9-26.2 0-11.4-2.7-20.2-7.9-26.6-5.2-6.4-12.3-9.6-21.5-9.6zm69.1-37.4v145.5H671.1V453.6h135.8zm-15.2 73.6c0-8-1.4-15.5-4.1-22.3-2.7-6.8-6.7-13-12.1-18.4-5.1-5.2-10.8-9.1-17.2-11.8-6.3-2.6-13.2-3.9-20.5-3.9-7.4 0-14.3 1.3-20.7 3.9-6.4 2.6-12.1 6.6-17.2 11.8-5.3 5.4-9.3 11.5-12 18.3-2.7 6.8-4 14.3-4 22.4 0 8 1.3 15.4 4 22.3s6.7 13.1 12 18.5c4.9 5.1 10.6 9 17 11.6 6.4 2.6 13.3 3.9 20.9 3.9 7.3 0 14.1-1.3 20.5-3.9 6.4-2.6 12.1-6.5 17.2-11.6 5.3-5.5 9.4-11.6 12.1-18.5 2.7-6.8 4.1-14.3 4.1-22.3z"></path>
+        <path class="st1" d="m675.2 552-9 25.1L648 448.7l10.1-28.9m-133.4 45.3-.2-1.7L645 447l10.7-30.6-133.4 18.5-9.5 31.8 11.9-1.6zm138.6 115.6-131.7 18.5-17.9-126 13.4 6 .7-1.5-.5-2.1-14.1-6.4-.4-2.5 11.8-1.6.4 1.7 119.7-16.3 18.6 130.2zm-26.4-14.4c0-1-.1-2.1-.3-3.3l-13.1-89.3c-.6-4.1-2-7.2-4.3-9.3-1.8-1.6-4.1-2.5-6.7-2.5-.7 0-1.3.1-2 .2-3.5.5-6.1 2.1-7.7 4.7-1.2 1.9-1.8 4.2-1.8 6.9 0 1 .1 2.1.3 3.2l4.9 34.3-38.3 5.6-4.9-34.3c-.6-4-2-7.1-4.2-9.2-1.8-1.7-4.1-2.6-6.6-2.6-.6 0-1.2 0-1.8.1-3.6.5-6.4 2.1-8 4.7-1.2 1.9-1.8 4.2-1.8 6.9 0 1 .1 2.1.3 3.3L554 575c.6 4.1 2 7.2 4.4 9.2 1.8 1.6 4.1 2.4 6.8 2.4.7 0 1.5-.1 2.2-.2 3.3-.5 5.9-2.1 7.4-4.7 1.1-1.9 1.6-4.1 1.6-6.7 0-1-.1-2.1-.3-3.3l-5.4-35.3 38.3-5.6 5.4 35.3c.6 4.1 2 7.2 4.3 9.2 1.8 1.6 4.1 2.4 6.7 2.4.7 0 1.3-.1 2.1-.2 3.4-.5 6.1-2.1 7.7-4.7 1.2-1.6 1.7-3.9 1.7-6.5z"></path>
+        <path class="st1" d="m353.6 543-6.2-47 47.2-111.9 11.7 39.4L357.6 534l-4 9zm101.9-65.8c-3.9-1.7-7.7-2.5-11.4-2.5-4.2 0-8.3 1.1-12.2 3.2-7.4 4.1-13.4 11.5-18 22.4-3 7.1-4.5 13.6-4.5 19.6 0 3 .4 5.9 1.1 8.6 2.3 8.1 7.5 13.8 15.9 17.4 3.9 1.6 7.6 2.5 11.3 2.5 4.2 0 8.2-1.1 12.2-3.2 7.4-4 13.3-11.3 17.8-22 3.1-7.3 4.6-14 4.6-20.1 0-2.9-.4-5.7-1.1-8.4-2.3-8.2-7.4-13.9-15.7-17.5zm62.2-39.6-120.1-55 11.8 39.8 117.8 53.2m-.1 3.6-53.3 121.1L355.6 547v-.1l53.3-121 118.2 53.3zm-31.9 30.6v-2.2c0-6.8-1.2-13.5-3.6-20-2.5-6.9-6.2-12.9-10.9-17.8-4.7-5-10.4-8.9-17.1-11.7-6.7-2.8-13.4-4.2-20.2-4.2h-.3c-6.9 0-13.7 1.6-20.4 4.6-7 3.1-13.1 7.3-18.3 12.8-5.2 5.5-9.4 12.1-12.7 19.8-3.2 7.6-5 15.2-5.3 22.8 0 .9-.1 1.7-.1 2.6 0 6.7 1.2 13.3 3.4 19.7 2.4 6.8 6 12.6 10.8 17.6 4.7 4.9 10.6 8.9 17.5 11.8 6.6 2.8 13.3 4.2 20.1 4.2h.2c6.8 0 13.6-1.5 20.3-4.4 7.1-3.2 13.2-7.5 18.5-13 5.2-5.5 9.5-12.1 12.7-19.7 3.3-7.8 5.1-15.4 5.4-22.9z"></path>
+        <path class="st1" d="m349.5 573.2-19-124.8 8.1-42.3 18.8 126-7.9 41.1zm-2.6 5.2-130.7 20.5-21-128.4 132.2-20.2 19.5 128.1zm-30.1-14.1c0-.7-.1-1.4-.2-2.2-.3-1.8-1-3.4-2-4.6-1-1.2-2.4-2.2-4.2-2.8-1.8-.6-3.9-.9-6.4-.9-2.4 0-5.1.3-8.1.8l-34.9 6c.4-2.7 1.7-6.2 4.1-10.5 2.6-4.8 6.5-10.6 11.6-17.4 1.8-2.4 3.1-4.1 4-5.4.7-.8 1.6-2 2.8-3.6 8-10.5 12.9-19 14.8-25.7 1.1-3.8 1.7-7.6 2-11.5.1-1.1.1-2.1.1-3.1 0-2.8-.2-5.5-.7-8.2-.4-2.4-1-4.5-1.8-6.1-.8-1.6-1.8-2.9-3.1-3.6-1.4-.9-3.4-1.2-6-1.2-2.2 0-4.8.3-7.8.8l-40.4 6.9c-4.9.8-8.5 2.3-10.8 4.4-1.8 1.7-2.8 3.9-2.8 6.5 0 .7.1 1.4.2 2.1.6 3.4 2.4 5.9 5.2 7.2 1.7.8 3.8 1.1 6.2 1.1 1.6 0 3.4-.2 5.4-.5l33.8-5.7c.1.6.1 1.2.1 1.8 0 2.1-.4 4.2-1.1 6.2-1 2.8-3.5 6.8-7.5 11.9-1.1 1.4-2.9 3.5-5.2 6.5-9.1 11-15.6 20.4-19.6 28.3-2.8 5.4-4.7 10.7-5.8 15.9-.6 3-.9 6-.9 8.8 0 2 .2 4 .5 5.8.5 2.7 1.1 4.9 2 6.7.9 1.8 2 3.1 3.9 3.5 1.3.7 3.3 1 5.9 1 3.4 0 7.9-.5 13.7-1.5l36.6-6.3c6.5-1.1 11-2.7 13.6-4.8 2.2-1.9 3.3-4.3 3.2-7zM204.3 422.5l-6.7 33.3-2.3 11.3 132.1-20.2 8.7-45.5-131.8 21.1z"></path>
+    </g>
+</svg>'''
+
+# Escape curly braces for use in formatted strings (e.g. ZOHO_CARD_CONNECTED)
+# This changes {fill:#fff} to {{fill:#fff}} so .format() doesn't treat it as a key
+ZOHO_LOGO_SVG_ESCAPED = ZOHO_LOGO_SVG.replace('{', '{{').replace('}', '}}')
+
+SLACK_LOGO_SVG = '''<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="logo-svg">
+    <path d="M26.5002 14.9996C27.8808 14.9996 29 13.8804 29 12.4998C29 11.1192 27.8807 10 26.5001 10C25.1194 10 24 11.1193 24 12.5V14.9996H26.5002ZM19.5 14.9996C20.8807 14.9996 22 13.8803 22 12.4996V5.5C22 4.11929 20.8807 3 19.5 3C18.1193 3 17 4.11929 17 5.5V12.4996C17 13.8803 18.1193 14.9996 19.5 14.9996Z" fill="#2EB67D"></path>
+    <path d="M5.49979 17.0004C4.11919 17.0004 3 18.1196 3 19.5002C3 20.8808 4.1193 22 5.49989 22C6.8806 22 8 20.8807 8 19.5V17.0004H5.49979ZM12.5 17.0004C11.1193 17.0004 10 18.1197 10 19.5004V26.5C10 27.8807 11.1193 29 12.5 29C13.8807 29 15 27.8807 15 26.5V19.5004C15 18.1197 13.8807 17.0004 12.5 17.0004Z" fill="#E01E5A"></path>
+    <path d="M17.0004 26.5002C17.0004 27.8808 18.1196 29 19.5002 29C20.8808 29 22 27.8807 22 26.5001C22 25.1194 20.8807 24 19.5 24L17.0004 24L17.0004 26.5002ZM17.0004 19.5C17.0004 20.8807 18.1197 22 19.5004 22L26.5 22C27.8807 22 29 20.8807 29 19.5C29 18.1193 27.8807 17 26.5 17L19.5004 17C18.1197 17 17.0004 18.1193 17.0004 19.5Z" fill="#ECB22E"></path>
+    <path d="M14.9996 5.49979C14.9996 4.11919 13.8804 3 12.4998 3C11.1192 3 10 4.1193 10 5.49989C10 6.88061 11.1193 8 12.5 8L14.9996 8L14.9996 5.49979ZM14.9996 12.5C14.9996 11.1193 13.8803 10 12.4996 10L5.5 10C4.11929 10 3 11.1193 3 12.5C3 13.8807 4.11929 15 5.5 15L12.4996 15C13.8803 15 14.9996 13.8807 14.9996 12.5Z" fill="#36C5F0"></path>
+</svg>'''
+
+# Zoho Card - Not Connected (Uses standard SVG, no formatting)
+ZOHO_CARD_NOT_CONNECTED = '''
+<div class="card">
+    <div class="card-header">
+        <div class="brand-section">
+            <div class="logo-box">
+                ''' + ZOHO_LOGO_SVG + '''
+            </div>
+            <div>
+                <div class="brand-title">Zoho CRM</div>
+                <div class="brand-subtitle">Decisions in CRM</div>
+            </div>
+        </div>
+        <span class="status-badge">Not Connected</span>
+    </div>
+    <div class="card-body">
+        <p class="description">Authenticate with your Zoho CRM account to view and manage decisions directly within your CRM records.</p>
+        <button class="btn btn-primary" onclick="startZohoOAuth()">
+            Connect Zoho CRM
+        </button>
+    </div>
+</div>
+'''
+
+# Zoho Card - Connected (Uses ESCAPED SVG because this string is formatted)
+ZOHO_CARD_CONNECTED = '''
+<div class="card">
+    <div class="card-header">
+        <div class="brand-section">
+            <div class="logo-box">
+                ''' + ZOHO_LOGO_SVG_ESCAPED + '''
+            </div>
+            <div>
+                <div class="brand-title">Zoho CRM</div>
+                <div class="brand-subtitle">Decisions in CRM</div>
+            </div>
+        </div>
+        <div class="badge-active">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Active
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <div class="grid-item">
+            <span class="label">Organization ID</span>
+            <span class="value">{org_id}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Data Center</span>
+            <span class="value">{data_center}</span>
+        </div>
+    </div>
+
+    <div class="card-footer">
+        <div class="date-meta">Connected Since {connected_date}</div>
+        <button class="btn-disconnect" onclick="if(confirm('Disconnect Zoho CRM?')) window.location.href='/zoho/disconnect?org_id={org_id}'">Disconnect</button>
+    </div>
+</div>
+'''
+
+# Slack Card - Locked (Zoho not connected)
+SLACK_CARD_LOCKED = '''
+<div class="card locked-card">
+    <div class="card-header">
+        <div class="brand-section">
+            <div class="logo-box">
+                ''' + SLACK_LOGO_SVG + '''
+            </div>
+            <div>
+                <div class="brand-title">Slack</div>
+                <div class="brand-subtitle">Decisions & Voting</div>
+            </div>
+        </div>
+        <span class="status-badge">Locked</span>
+    </div>
+    <div class="card-body">
+        <p class="description">Requires Zoho CRM connection first. Once connected, you can propose decisions and vote directly from Slack.</p>
+        <button class="btn btn-disabled" disabled>
+            Connect Slack
+        </button>
+    </div>
+</div>
+'''
+
+# Slack Card - Not Connected (Zoho connected, Slack not)
+SLACK_CARD_NOT_CONNECTED = '''
+<div class="card">
+    <div class="card-header">
+        <div class="brand-section">
+            <div class="logo-box">
+                ''' + SLACK_LOGO_SVG + '''
+            </div>
+            <div>
+                <div class="brand-title">Slack</div>
+                <div class="brand-subtitle">Decisions & Voting</div>
+            </div>
+        </div>
+        <span class="status-badge">Not Connected</span>
+    </div>
+    <div class="card-body">
+        <p class="description">Connect Slack to propose decisions, cast votes, and collaborate with your team directly in your workspace.</p>
+        <button onclick="startSlackOAuth('{org_id}')" class="btn btn-primary">
+            Connect Slack
+        </button>
+    </div>
+</div>
+'''
+
+# Slack Card - Connected (template with placeholders)
+SLACK_CARD_CONNECTED = '''
+<div class="card">
+    <div class="card-header">
+        <div class="brand-section">
+            <div class="logo-box">
+                ''' + SLACK_LOGO_SVG + '''
+            </div>
+            <div>
+                <div class="brand-title">Slack</div>
+                <div class="brand-subtitle">Decisions & Voting</div>
+            </div>
+        </div>
+        <div class="badge-active">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Active
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <div class="grid-item">
+            <span class="label">Workspace</span>
+            <span class="value">{workspace_name}</span>
+        </div>
+        <div class="grid-item">
+            <span class="label">Team ID</span>
+            <span class="value">{team_id}</span>
+        </div>
+    </div>
+
+    <div class="card-footer">
+        <div class="date-meta">Connected Since {connected_date}</div>
+        <button class="btn-disconnect" onclick="if(confirm('Disconnect Slack?')) window.location.href='/slack/disconnect?org_id={org_id}'">Disconnect</button>
+    </div>
+</div>
+'''
+
+# Alert HTML templates
+ALERT_SETUP_HTML = '''
+<div class="alert-setup">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>
+    </svg>
+    <span>Please connect Zoho CRM first to enable the data pipeline.</span>
+</div>
+'''
+
+# Quick Commands Section (shown when both connected)
+COMMANDS_SECTION_HTML = '''
+<div class="commands-card">
+    <div class="commands-title">Quick Commands</div>
+    <div class="command-row">
+        <div class="cmd-pill">/decision help</div>
+        <div class="cmd-desc">to view all the commands</div>
+    </div>
+    <div class="command-row">
+        <div class="cmd-pill">/decision propose "text"</div>
+        <div class="cmd-desc">Create a new decision</div>
+    </div>
+    <div class="command-row">
+        <div class="cmd-pill">/decision approve &lt;id&gt;</div>
+        <div class="cmd-desc">Vote YES</div>
+    </div>
+    <div class="command-row">
+        <div class="cmd-pill">/decision reject &lt;id&gt;</div>
+        <div class="cmd-desc">Vote NO</div>
+    </div>
+</div>
+'''
+
+

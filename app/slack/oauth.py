@@ -345,3 +345,56 @@ async def slack_callback(
             """,
             status_code=500
         )
+
+
+@router.api_route("/slack/disconnect", methods=["GET", "POST"])
+async def slack_disconnect(request: Request, org_id: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Disconnect Slack for an organization.
+    Revokes the bot token and removes the record from database.
+    Does NOT affect the Zoho CRM connection.
+    """
+    try:
+        # Get org_id from multiple sources
+        if not org_id:
+            org_id = request.query_params.get("org_id")
+        
+        if not org_id and request.method == "POST":
+            try:
+                data = await request.json()
+                org_id = data.get("org_id")
+            except Exception:
+                pass
+
+        if not org_id:
+            logger.warning("Slack disconnect requested without org_id")
+            return RedirectResponse(url="/dashboard", status_code=303)
+
+        installation = db.query(SlackInstallation).filter(
+            SlackInstallation.zoho_org_id == org_id
+        ).first()
+
+        if not installation:
+            logger.warning(f"No Slack installation found for org {org_id}")
+            return RedirectResponse(url=f"/dashboard?org_id={org_id}", status_code=303)
+
+        # 1. Revoke Slack tokens
+        try:
+            from .client import get_client_for_team
+            client = get_client_for_team(installation.team_id, db)
+            if client:
+                client.revoke_token()
+        except Exception as e:
+            logger.warning(f"Failed to revoke Slack token: {e}")
+
+        # 2. Delete the installation
+        db.delete(installation)
+        db.commit()
+
+        logger.info(f"✅ Slack disconnected for org {org_id}")
+        return RedirectResponse(url=f"/dashboard?org_id={org_id}", status_code=303)
+
+    except Exception as e:
+        logger.error(f"Error disconnecting Slack: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
