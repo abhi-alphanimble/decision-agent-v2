@@ -147,6 +147,17 @@ PRIVACY_POLICY_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Privacy Policy - Decision Agent</title>
     <style>
+        :root {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --border: #e2e8f0;
+            --radius: 12px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -154,78 +165,156 @@ PRIVACY_POLICY_HTML = """
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #f8f9fa;
-            color: #333;
-            line-height: 1.8;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding: 24px 20px;
         }
         
         .container {
-            background: white;
-            border-radius: 16px;
-            padding: 48px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 32px;
             max-width: 800px;
             margin: 0 auto;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            margin-bottom: 24px;
+        }
+        
+        .back-button:hover {
+            background: #f8fafc;
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        
+        .back-button svg {
+            width: 16px;
+            height: 16px;
         }
         
         .header {
             text-align: center;
-            margin-bottom: 32px;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .lock-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            display: block;
         }
         
         .header h1 {
-            font-size: 32px;
+            font-size: 28px;
+            font-weight: 700;
             margin-bottom: 8px;
-            color: #1a1a2e;
+            color: var(--text-main);
         }
         
         .header p {
-            color: #667eea;
-            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 500;
         }
         
         h2 {
-            color: #1a1a2e;
-            margin-top: 32px;
-            margin-bottom: 16px;
-            font-size: 22px;
+            color: var(--text-main);
+            margin-top: 24px;
+            margin-bottom: 12px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        h2:first-of-type {
+            margin-top: 0;
         }
         
         p, ul {
-            margin-bottom: 16px;
-            color: #555;
+            margin-bottom: 12px;
+            color: var(--text-muted);
+            font-size: 14px;
+            line-height: 1.6;
         }
         
         ul {
-            padding-left: 24px;
+            padding-left: 20px;
         }
         
         li {
             margin-bottom: 8px;
         }
         
+        li strong {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+        
         .section {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
         
         .updated {
             text-align: center;
-            color: #999;
-            font-size: 14px;
-            margin-top: 48px;
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            font-weight: 500;
+        }
+        
+        .contact-email {
+            color: var(--primary);
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <a href="/dashboard" class="back-button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back to Dashboard
+        </a>
+        
         <div class="header">
-            <h1>🔒 Privacy Policy</h1>
+            <svg class="lock-icon" viewBox="0 0 495 495" xmlns="http://www.w3.org/2000/svg">
+                <g>
+                    <path style="fill:#9BC9FF;" d="M180,107.5c0-37.22,30.28-67.5,67.5-67.5S315,70.28,315,107.5V175h40v-67.5
+                        C355,48.224,306.776,0,247.5,0S140,48.224,140,107.5V175h40V107.5z"/>
+                    <path style="fill:#003F8A;" d="M247.5,175v96.431c22.056,0,40,17.944,40,40c0,14.773-8.056,27.691-20,34.619v50.566h-20V495H425
+                        V175H247.5z"/>
+                    <path style="fill:#2488FF;" d="M227.5,396.616V346.05c-11.944-6.927-20-19.846-20-34.619c0-22.056,17.944-40,40-40V175H70v320
+                        h177.5v-98.384H227.5z"/>
+                    <path style="fill:#BDDBFF;" d="M207.5,311.431c0,14.773,8.056,27.692,20,34.619v50.566h40V346.05c11.944-6.927,20-19.846,20-34.619
+                        c0-22.056-17.944-40-40-40C225.444,271.431,207.5,289.375,207.5,311.431z"/>
+                </g>
+            </svg>
+            <h1>Privacy Policy</h1>
             <p>Decision Agent for Slack</p>
         </div>
-    
-    <div class="container">
+        
         <div class="section">
             <h2>Introduction</h2>
             <p>
@@ -258,7 +347,7 @@ PRIVACY_POLICY_HTML = """
         </div>
         
         <div class="section">
-            <h2>Data Storage & Security</h2>
+            <h2>Data Storage &amp; Security</h2>
             <p>
                 Your data is stored securely in our database. Access tokens are encrypted at rest 
                 using industry-standard encryption (Fernet/AES). We implement appropriate technical 
@@ -302,12 +391,32 @@ PRIVACY_POLICY_HTML = """
             <h2>Contact Us</h2>
             <p>
                 If you have questions about this privacy policy or want to exercise your rights, 
-                please contact us at: <strong>info@alphanimble.com</strong>
+                please contact us at: <span class="contact-email">info@alphanimble.com</span>
             </p>
         </div>
         
         <p class="updated">Last updated: December 2024</p>
     </div>
+    
+    <script>
+        // Dynamically set the back button URL with orgId if available
+        (function() {
+            // Get orgId from template (injected by backend) or URL params
+            var orgId = "{org_id}";
+            
+            // If not in template, try to get from current URL params
+            if (!orgId || orgId === "") {
+                var urlParams = new URLSearchParams(window.location.search);
+                orgId = urlParams.get('orgId') || urlParams.get('org_id') || '';
+            }
+            
+            // Update the back button href
+            var backButton = document.querySelector('.back-button');
+            if (backButton && orgId && orgId !== "") {
+                backButton.href = '/dashboard?orgId=' + encodeURIComponent(orgId);
+            }
+        })();
+    </script>
 </body>
 </html>
 """
@@ -321,6 +430,17 @@ SUPPORT_PAGE_HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Support - Decision Agent</title>
     <style>
+        :root {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --border: #e2e8f0;
+            --radius: 12px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -328,77 +448,121 @@ SUPPORT_PAGE_HTML = """
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #f8f9fa;
-            color: #333;
-            line-height: 1.8;
-        }
-        
-        .header {
-            background: white;
-            color: #1a1a2e;
-            padding: 48px 20px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        
-        .header h1 {
-            font-size: 32px;
-            margin-bottom: 8px;
-            color: #1a1a2e;
-        }
-        
-        .header p {
-            opacity: 1;
-            color: #667eea;
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding: 24px 20px;
         }
         
         .container {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            padding: 32px;
             max-width: 800px;
             margin: 0 auto;
-            padding: 48px 20px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border: 1px solid var(--border);
         }
         
-        .card {
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 32px;
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
             margin-bottom: 24px;
-            box-shadow: none;
+        }
+        
+        .back-button:hover {
+            background: #f8fafc;
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        
+        .back-button svg {
+            width: 16px;
+            height: 16px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .support-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            display: block;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text-main);
+        }
+        
+        .header p {
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .section {
+            margin-bottom: 32px;
         }
         
         h2 {
-            color: #1a1a2e;
+            color: var(--text-main);
             margin-bottom: 16px;
-            font-size: 22px;
+            font-size: 18px;
+            font-weight: 700;
         }
         
         h3 {
-            color: #667eea;
-            margin-top: 24px;
-            margin-bottom: 12px;
+            color: var(--primary);
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 16px;
+            font-weight: 600;
         }
         
         p {
-            color: #555;
-            margin-bottom: 16px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-size: 14px;
+            line-height: 1.6;
         }
         
         .command-list {
-            background: #f8f9fa;
+            background: #f8fafc;
             border-radius: 8px;
-            padding: 20px;
+            padding: 16px;
             margin: 16px 0;
+            border: 1px solid var(--border);
         }
         
         .cmd {
-            font-family: 'Monaco', 'Menlo', monospace;
-            background: #e9ecef;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+            background: #ffffff;
             padding: 10px 14px;
             border-radius: 6px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             display: flex;
             align-items: flex-start;
+            gap: 12px;
+            border: 1px solid var(--border);
         }
         
         .cmd:last-child {
@@ -407,30 +571,42 @@ SUPPORT_PAGE_HTML = """
         
         .cmd code {
             font-weight: 600;
-            color: #667eea;
-            min-width: 250px;
+            color: var(--primary);
+            min-width: 220px;
+            font-size: 13px;
         }
         
         .cmd span {
-            color: #666;
-            font-family: inherit;
+            color: var(--text-muted);
+            font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+            font-size: 13px;
         }
         
-        .contact-card {
+        .contact-section {
             text-align: center;
-            padding: 40px;
+            padding: 32px 24px;
+            background: #f8fafc;
+            border-radius: 8px;
+            margin-top: 32px;
+            border: 1px solid var(--border);
         }
         
-        .contact-card .emoji {
-            font-size: 48px;
-            margin-bottom: 16px;
+        .contact-section svg {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 16px;
+            display: block;
+        }
+        
+        .contact-section h2 {
+            margin-bottom: 8px;
         }
         
         .email-link {
-            color: #667eea;
+            color: var(--primary);
             text-decoration: none;
             font-weight: 600;
-            font-size: 18px;
+            font-size: 16px;
         }
         
         .email-link:hover {
@@ -440,12 +616,24 @@ SUPPORT_PAGE_HTML = """
 </head>
 <body>
     <div class="container">
+        <a href="/dashboard" class="back-button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back to Dashboard
+        </a>
+        
         <div class="header">
-            <h1>💬 Support</h1>
+            <svg class="support-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <g>
+                    <path fill="#2563eb" d="M12 2C6.486 2 2 6.486 2 12v4.143C2 17.167 2.897 18 4 18h1a1 1 0 0 0 1-1v-5.143a1 1 0 0 0-1-1h-.908C4.648 6.987 7.978 4 12 4s7.352 2.987 7.908 6.857H19a1 1 0 0 0-1 1V18c0 1.103-.897 2-2 2h-2v-1h-4v3h6c2.206 0 4-1.794 4-4 1.103 0 2-.833 2-1.857V12c0-5.514-4.486-10-10-10z"></path>
+                </g>
+            </svg>
+            <h1>Support</h1>
             <p>Decision Agent for Slack</p>
         </div>
         
-        <div class="card">
+        <div class="section">
             <h2>Available Commands</h2>
             <p>Here are all the commands you can use with Decision Agent:</p>
             
@@ -485,7 +673,7 @@ SUPPORT_PAGE_HTML = """
             </div>
         </div>
         
-        <div class="card">
+        <div class="section">
             <h2>Common Questions</h2>
             
             <h3>How does voting work?</h3>
@@ -508,21 +696,42 @@ SUPPORT_PAGE_HTML = """
             
             <h3>How do I change the approval percentage?</h3>
             <p>
-                Use <code>/decision config percentage 70</code> to set the required approval 
+                Use <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; color: var(--primary); font-size: 13px;">/decision config percentage 70</code> to set the required approval 
                 percentage to 70% for the current channel.
             </p>
         </div>
         
-        <div class="card contact-card">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
-                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+        <div class="contact-section">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <g>
+                    <path fill="#2563eb" d="M12 2C6.486 2 2 6.486 2 12v4.143C2 17.167 2.897 18 4 18h1a1 1 0 0 0 1-1v-5.143a1 1 0 0 0-1-1h-.908C4.648 6.987 7.978 4 12 4s7.352 2.987 7.908 6.857H19a1 1 0 0 0-1 1V18c0 1.103-.897 2-2 2h-2v-1h-4v3h6c2.206 0 4-1.794 4-4 1.103 0 2-.833 2-1.857V12c0-5.514-4.486-10-10-10z"></path>
+                </g>
             </svg>
             <h2>Need More Help?</h2>
             <p>Contact our support team:</p>
             <a href="mailto:info@alphanimble.com" class="email-link">info@alphanimble.com</a>
         </div>
     </div>
+    
+    <script>
+        // Dynamically set the back button URL with orgId if available
+        (function() {
+            // Get orgId from template (injected by backend) or URL params
+            var orgId = "{org_id}";
+            
+            // If not in template, try to get from current URL params
+            if (!orgId || orgId === "") {
+                var urlParams = new URLSearchParams(window.location.search);
+                orgId = urlParams.get('orgId') || urlParams.get('org_id') || '';
+            }
+            
+            // Update the back button href
+            var backButton = document.querySelector('.back-button');
+            if (backButton && orgId && orgId !== "") {
+                backButton.href = '/dashboard?orgId=' + encodeURIComponent(orgId);
+            }
+        })();
+    </script>
 </body>
 </html>
 """

@@ -17,7 +17,7 @@ LOG_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
 LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 
 # Do not log sensitive environment variables
-SENSITIVE_KEYS = {"SLACK_BOT_TOKEN", "SLACK_CLIENT_SECRET", "DB_PASSWORD", "GEMINI_API_KEY"}
+SENSITIVE_KEYS = {"SLACK_BOT_TOKEN", "SLACK_CLIENT_SECRET", "DB_PASSWORD", "OPENROUTER_API_KEY"}
 
 
 def _redact_sensitive(record_dict: Dict[str, object]) -> Dict[str, object]:

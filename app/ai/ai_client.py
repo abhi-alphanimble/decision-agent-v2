@@ -21,27 +21,41 @@ def _is_test_mode() -> bool:
 
 class AIClient:
     def __init__(self):
-        self.api_key = config.OPEN_ROUTER_API_KEY
-        self.model = "openrouter/google/gemini-2.5-flash-lite"
+        self.api_key = config.OPENROUTER_API_KEY
+        self.model = "openrouter/google/gemini-2.5-flash-lite"  # Updated to valid OpenRouter model
         self.initialized = False
+        self.init_error = None  # Track initialization error for better diagnostics
 
         if not litellm:
-            logger.warning("⚠️ litellm SDK not available")
+            self.init_error = "litellm library not installed"
+            logger.warning("⚠️ litellm SDK not available - AI features will be disabled")
+            logger.info("💡 Install with: pip install litellm")
             return
 
-        if self.api_key:
-            try:
-                litellm.api_key = self.api_key
-                logger.info("✅ AI Client initialized with OpenRouter")
-                self.initialized = True
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize AI Client: {e}", exc_info=True)
-        else:
-            logger.warning("⚠️ OPEN_ROUTER_API_KEY not found in config")
+        if not self.api_key:
+            self.init_error = "OPENROUTER_API_KEY not configured"
+            logger.warning("⚠️ OPENROUTER_API_KEY not found in environment variables")
+            logger.info("💡 Set OPENROUTER_API_KEY in your .env file to enable AI features")
+            return
+
+        try:
+            # For OpenRouter, set the API key in environment (LiteLLM convention)
+            import os
+            os.environ["OPENROUTER_API_KEY"] = self.api_key
+            
+            # Skip synchronous test completion during initialization to avoid blocking startup/Slack 3s window.
+            # We will assume configuration is correct if API key is present.
+            self.initialized = True
+            logger.info(f"✅ AI Client configured with model: {self.model}")
+                
+        except Exception as e:
+            self.init_error = f"AI Client configuration failed: {str(e)}"
+            logger.error(f"❌ Failed to configure AI Client: {e}", exc_info=True)
 
     def summarize_decision(self, decision: Decision, votes: list[Vote]) -> Optional[str]:
         if not self.initialized:
-            logger.error("❌ AI client not initialized")
+            error_msg = f"AI client not initialized: {self.init_error or 'unknown reason'}"
+            logger.error(f"❌ {error_msg}")
             return None
         try:
             # Build context from decision and votes
@@ -66,7 +80,8 @@ Provide a 2-3 sentence summary of the decision and voting status."""
             
             response = litellm.completion(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
+                api_key=self.api_key  # Pass API key explicitly for OpenRouter
             )
             if response and response.choices and response.choices[0].message.content:
                 return response.choices[0].message.content
@@ -77,7 +92,8 @@ Provide a 2-3 sentence summary of the decision and voting status."""
 
     def suggest_next_steps(self, decision: Decision, votes: list[Vote]) -> Optional[str]:
         if not self.initialized:
-            logger.error("❌ AI client not initialized")
+            error_msg = f"AI client not initialized: {self.init_error or 'unknown reason'}"
+            logger.error(f"❌ {error_msg}")
             return None
         try:
             # Build context from decision and votes
@@ -102,7 +118,8 @@ Based on the current voting status, provide 2-3 actionable suggestions for next 
             
             response = litellm.completion(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
+                api_key=self.api_key  # Pass API key explicitly for OpenRouter
             )
             if response and response.choices and response.choices[0].message.content:
                 return response.choices[0].message.content

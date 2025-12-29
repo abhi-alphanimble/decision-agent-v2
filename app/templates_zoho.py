@@ -801,8 +801,8 @@ ZOHO_DASHBOARD_HTML = """
     </div>
 
     <div class="footer">
-        Need help? <a href="/support">Contact Support</a> | 
-        <a href="/privacy">Privacy Policy</a>
+        Need help? <a href="/support?orgId={team_id}">Contact Support</a> | 
+        <a href="/privacy?orgId={team_id}">Privacy Policy</a>
     </div>
     
     <script>

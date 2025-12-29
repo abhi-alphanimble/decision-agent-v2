@@ -174,11 +174,21 @@ async def show_dashboard(
         )
 
 @dashboard_router.get("/privacy", response_class=HTMLResponse)
-async def privacy_policy():
+async def privacy_policy(
+    orgId: Optional[str] = Query(None, description="Zoho organization ID for back navigation"),
+    org_id: Optional[str] = Query(None, description="Zoho organization ID (snake_case)")
+):
     """Privacy Policy page - required for Slack App Directory."""
     from starlette.responses import Response
+    
+    # Support both orgId (Zoho Web Tab) and org_id (OAuth flow)
+    effective_org_id = orgId or org_id or ""
+    
+    # Inject the org_id into the HTML template
+    html_content = PRIVACY_POLICY_HTML.replace("{org_id}", effective_org_id)
+    
     return Response(
-        content=PRIVACY_POLICY_HTML,
+        content=html_content,
         media_type="text/html",
         headers={
             "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
@@ -186,11 +196,21 @@ async def privacy_policy():
     )
 
 @dashboard_router.get("/support", response_class=HTMLResponse)
-async def support_page():
+async def support_page(
+    orgId: Optional[str] = Query(None, description="Zoho organization ID for back navigation"),
+    org_id: Optional[str] = Query(None, description="Zoho organization ID (snake_case)")
+):
     """Support page - required for Slack App Directory."""
     from starlette.responses import Response
+    
+    # Support both orgId (Zoho Web Tab) and org_id (OAuth flow)
+    effective_org_id = orgId or org_id or ""
+    
+    # Inject the org_id into the HTML template
+    html_content = SUPPORT_PAGE_HTML.replace("{org_id}", effective_org_id)
+    
     return Response(
-        content=SUPPORT_PAGE_HTML,
+        content=html_content,
         media_type="text/html",
         headers={
             "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"

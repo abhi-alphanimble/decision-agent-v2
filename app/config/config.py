@@ -34,8 +34,8 @@ class Config:
     # Token encryption for secure storage
     TOKEN_ENCRYPTION_KEY = os.getenv('TOKEN_ENCRYPTION_KEY')  # Required - Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     
-    # AI - Optional
-    OPEN_ROUTER_API_KEY = os.getenv('OPEN_ROUTER_API_KEY', '')
+    # AI - Optional (LiteLLM with OpenRouter)
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
     
     # Zoho OAuth - Optional (for multi-tenant CRM integration)
     ZOHO_CLIENT_ID = os.getenv('ZOHO_CLIENT_ID', '')

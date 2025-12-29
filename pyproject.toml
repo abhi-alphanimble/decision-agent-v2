@@ -20,6 +20,7 @@ dependencies = [
     "slack-sdk>=3.39.0",
     
     # AI Integration
+    "litellm>=1.0.0",
     "google-generativeai>=0.8.5",
     
     # Data Validation
