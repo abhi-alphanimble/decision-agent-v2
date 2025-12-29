@@ -158,28 +158,32 @@ PRIVACY_POLICY_HTML = """
             background: #f8f9fa;
             color: #333;
             line-height: 1.8;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 48px;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 48px 20px;
             text-align: center;
+            margin-bottom: 32px;
         }
         
         .header h1 {
             font-size: 32px;
             margin-bottom: 8px;
+            color: #1a1a2e;
         }
         
         .header p {
-            opacity: 0.9;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 48px 20px;
+            color: #667eea;
+            font-weight: 600;
         }
         
         h2 {
@@ -203,11 +207,7 @@ PRIVACY_POLICY_HTML = """
         }
         
         .section {
-            background: white;
-            border-radius: 12px;
-            padding: 32px;
             margin-bottom: 24px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
         
         .updated {
@@ -219,10 +219,11 @@ PRIVACY_POLICY_HTML = """
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🔒 Privacy Policy</h1>
-        <p>Decision Agent for Slack</p>
-    </div>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 Privacy Policy</h1>
+            <p>Decision Agent for Slack</p>
+        </div>
     
     <div class="container">
         <div class="section">
@@ -301,7 +302,7 @@ PRIVACY_POLICY_HTML = """
             <h2>Contact Us</h2>
             <p>
                 If you have questions about this privacy policy or want to exercise your rights, 
-                please contact us at: <strong>support@decisionagent.ai</strong>
+                please contact us at: <strong>info@alphanimble.com</strong>
             </p>
         </div>
         
@@ -334,15 +335,22 @@ SUPPORT_PAGE_HTML = """
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: white;
+            color: #1a1a2e;
             padding: 48px 20px;
             text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
         
         .header h1 {
             font-size: 32px;
             margin-bottom: 8px;
+            color: #1a1a2e;
+        }
+        
+        .header p {
+            opacity: 1;
+            color: #667eea;
         }
         
         .container {
@@ -352,11 +360,11 @@ SUPPORT_PAGE_HTML = """
         }
         
         .card {
-            background: white;
+            background: #f8f9fa;
             border-radius: 12px;
             padding: 32px;
             margin-bottom: 24px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            box-shadow: none;
         }
         
         h2 {
@@ -431,12 +439,12 @@ SUPPORT_PAGE_HTML = """
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>💬 Support</h1>
-        <p>Decision Agent for Slack</p>
-    </div>
-    
     <div class="container">
+        <div class="header">
+            <h1>💬 Support</h1>
+            <p>Decision Agent for Slack</p>
+        </div>
+        
         <div class="card">
             <h2>Available Commands</h2>
             <p>Here are all the commands you can use with Decision Agent:</p>
@@ -506,10 +514,13 @@ SUPPORT_PAGE_HTML = """
         </div>
         
         <div class="card contact-card">
-            <div class="emoji">📧</div>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+            </svg>
             <h2>Need More Help?</h2>
             <p>Contact our support team:</p>
-            <a href="mailto:support@decisionagent.ai" class="email-link">support@decisionagent.ai</a>
+            <a href="mailto:info@alphanimble.com" class="email-link">info@alphanimble.com</a>
         </div>
     </div>
 </body>

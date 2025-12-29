@@ -35,7 +35,7 @@ class Config:
     TOKEN_ENCRYPTION_KEY = os.getenv('TOKEN_ENCRYPTION_KEY')  # Required - Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     
     # AI - Optional
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+    OPEN_ROUTER_API_KEY = os.getenv('OPEN_ROUTER_API_KEY', '')
     
     # Zoho OAuth - Optional (for multi-tenant CRM integration)
     ZOHO_CLIENT_ID = os.getenv('ZOHO_CLIENT_ID', '')

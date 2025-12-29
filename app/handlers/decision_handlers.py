@@ -94,10 +94,10 @@ def handle_propose_command(
         }
     
     # Validate text length (maximum)
-    if len(proposal_text) > 500:
+    if len(proposal_text) > 250:
         logger.warning(f"❌ Proposal too long: {len(proposal_text)} chars")
         return {
-            "text": f"❌ Proposal too long. Maximum 500 characters.\n\n*You provided:* {len(proposal_text)} characters\n*Limit:* 500 characters\n\n💡 *Tip:* Try to be more concise!",
+            "text": f"❌ Proposal too long. Maximum 250 characters.\n\n*You provided:* {len(proposal_text)} characters\n*Limit:* 250 characters",
             "response_type": "ephemeral"
         }
     
@@ -644,6 +644,11 @@ def handle_summarize_command(
                 "response_type": "ephemeral"
             }
 
+        # Limit summary to 300 characters for efficiency
+        MAX_SUMMARY_LENGTH = 300
+        if len(summary) > MAX_SUMMARY_LENGTH:
+            summary = summary[:MAX_SUMMARY_LENGTH].rstrip() + "..."
+
         # 5. Increment AI usage after successful call
         remaining_msg = ""
         if team_id:
@@ -737,6 +742,11 @@ def handle_suggest_command(
                 "text": "❌ Unable to generate suggestions. Please check if the AI service is configured correctly.",
                 "response_type": "ephemeral"
             }
+
+        # Limit suggestions to 550 characters for efficiency (with bullet points)
+        MAX_SUGGESTIONS_LENGTH = 550
+        if len(suggestions) > MAX_SUGGESTIONS_LENGTH:
+            suggestions = suggestions[:MAX_SUGGESTIONS_LENGTH].rstrip() + "..."
 
         # 5. Increment AI usage after successful call
         remaining_msg = ""
