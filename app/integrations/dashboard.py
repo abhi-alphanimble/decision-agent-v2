@@ -30,7 +30,8 @@ from ..templates_zoho import (
     ALERT_SETUP_HTML,
     COMMANDS_SECTION_HTML
 )
-from ..templates import PRIVACY_POLICY_HTML, SUPPORT_PAGE_HTML
+from ..templates import PRIVACY_POLICY_HTML, SUPPORT_PAGE_HTML, TERMS_OF_SERVICE_HTML
+from ..templates_docs import ADMIN_GUIDE_HTML, USER_GUIDE_HTML, HELP_DOCUMENT_HTML, CASE_STUDIES_HTML
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,77 @@ async def support_page(
     
     return Response(
         content=html_content,
+        media_type="text/html",
+        headers={
+            "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+        }
+    )
+
+
+@dashboard_router.get("/terms", response_class=HTMLResponse)
+async def terms_of_service(
+    orgId: Optional[str] = Query(None, description="Zoho organization ID for back navigation"),
+    org_id: Optional[str] = Query(None, description="Zoho organization ID (snake_case)")
+):
+    """Terms of Service page - required for Zoho Marketplace submission."""
+    from starlette.responses import Response
+    
+    # Support both orgId (Zoho Web Tab) and org_id (OAuth flow)
+    effective_org_id = orgId or org_id or ""
+    
+    # Inject the org_id into the HTML template
+    html_content = TERMS_OF_SERVICE_HTML.replace("{org_id}", effective_org_id)
+    
+    return Response(
+        content=html_content,
+        media_type="text/html",
+        headers={
+            "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+        }
+    )
+
+
+@dashboard_router.get("/admin-guide", response_class=HTMLResponse)
+async def admin_guide():
+    """Admin Guide page - required for Zoho Marketplace submission."""
+    return Response(
+        content=ADMIN_GUIDE_HTML,
+        media_type="text/html",
+        headers={
+            "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+        }
+    )
+
+
+@dashboard_router.get("/user-guide", response_class=HTMLResponse)
+async def user_guide():
+    """User Guide page - required for Zoho Marketplace submission."""
+    return Response(
+        content=USER_GUIDE_HTML,
+        media_type="text/html",
+        headers={
+            "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+        }
+    )
+
+
+@dashboard_router.get("/help", response_class=HTMLResponse)
+async def help_document():
+    """Help Document page - required for Zoho Marketplace submission."""
+    return Response(
+        content=HELP_DOCUMENT_HTML,
+        media_type="text/html",
+        headers={
+            "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
+        }
+    )
+
+
+@dashboard_router.get("/case-studies", response_class=HTMLResponse)
+async def case_studies():
+    """Case Studies page - required for Zoho Marketplace submission."""
+    return Response(
+        content=CASE_STUDIES_HTML,
         media_type="text/html",
         headers={
             "Content-Security-Policy": f"frame-ancestors 'self' {ZOHO_FRAME_ANCESTORS}"
